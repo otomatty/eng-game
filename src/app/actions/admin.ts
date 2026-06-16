@@ -93,7 +93,7 @@ export async function approveAttemptAction(fd: FormData) {
     .set({ status: "approved", approverId: admin.id, approvedAt: new Date() })
     .where(eq(questAttempts.id, attemptId));
 
-  await completeQuestForUser(attempt.userId, attempt.questId, admin.id);
+  await completeQuestForUser(attempt.userId, attempt.questId);
   revalidatePath("/admin/approvals");
   revalidatePath("/admin");
 }

@@ -193,7 +193,6 @@ export async function getRecommendedQuests(userId: number, limit = 3) {
 export async function completeQuestForUser(
   userId: number,
   questId: number,
-  approverId?: number,
 ): Promise<void> {
   const quest = (
     await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
@@ -246,7 +245,6 @@ export async function completeQuestForUser(
       .where(eq(users.id, userId));
   }
 
-  void approverId;
   // 単価を再計算
   await recomputeEstimatedRate(userId);
 }
