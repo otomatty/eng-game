@@ -49,7 +49,7 @@ function optionalText(label: string, max: number) {
 
 /** カテゴリ（未指定・空なら「一般」にフォールバック） */
 const categorySchema = z.preprocess(
-  (v) => (v == null ? "" : v),
+  (v) => v ?? "",
   z
     .string()
     .trim()

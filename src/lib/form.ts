@@ -11,8 +11,18 @@ export function formString(formData: FormData, key: string, fallback = ""): stri
   return typeof value === "string" ? value : fallback;
 }
 
-/** 数値フィールドを取り出す（数値化できなければ fallback） */
-export function formNumber(formData: FormData, key: string, fallback = 0): number {
-  const n = Number(formString(formData, key));
-  return Number.isNaN(n) ? fallback : n;
+/** 同名の文字列フィールドを全て取り出す（チェックボックス等の複数値向け） */
+export function formStrings(formData: FormData, key: string): string[] {
+  return formData
+    .getAll(key)
+    .filter((v): v is string => typeof v === "string");
+}
+
+/**
+ * サーバーアクションの戻り値（フォーム状態）。
+ * 入力検証に失敗したときは `error` にユーザー向けメッセージを格納する
+ * （throw ではなくフォーム状態へ反映する方針へ統一 / Issue #3）。
+ */
+export interface ActionResult {
+  error?: string;
 }
