@@ -124,13 +124,16 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
   revalidatePath("/admin");
 }
 
-export async function rejectAttemptAction(fd: FormData): Promise<void> {
+export async function rejectAttemptAction(
+  _prev: ActionResult,
+  fd: FormData,
+): Promise<ActionResult> {
   const admin = await requireAdmin();
   const parsed = rejectAttemptSchema.safeParse({
     attemptId: formString(fd, "attemptId"),
     reviewNote: formString(fd, "reviewNote"),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: firstError(parsed.error) };
   const db = getDb();
   await db
     .update(questAttempts)
@@ -147,6 +150,7 @@ export async function rejectAttemptAction(fd: FormData): Promise<void> {
     );
   revalidatePath("/admin/approvals");
   revalidatePath("/admin");
+  return {};
 }
 
 // ============ スキル & ツリー ============
