@@ -1,0 +1,23 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# local database
+/data/*.db
+/data/*.db-*
+
+# misc
+.DS_Store
+*.pem
+.env
+.env*.local
+
+# debug logs
+npm-debug.log*

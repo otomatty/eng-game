@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: theme("colors.zen.bg");
+  color: theme("colors.zen.ink");
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-zen-line bg-zen-surface p-5 shadow-sm;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition;
+  }
+  .btn-primary {
+    @apply btn bg-zen-accent text-white hover:opacity-90 disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply btn border border-zen-line bg-white text-zen-ink hover:bg-zen-bg;
+  }
+  .btn-danger {
+    @apply btn border border-red-200 bg-white text-red-600 hover:bg-red-50;
+  }
+  .input {
+    @apply w-full rounded-xl border border-zen-line bg-white px-3 py-2 text-sm outline-none focus:border-zen-accent;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-zen-sub;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .pill {
+    @apply badge bg-zen-accentSoft text-zen-accent;
+  }
+}
