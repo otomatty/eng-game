@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { questSkills, quests, skills } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
@@ -110,8 +109,9 @@ function QuestForm({
     <form action={saveQuestAction} className="space-y-3">
       {quest && <input type="hidden" name="id" value={quest.id} />}
       <div>
-        <label className="label">タイトル</label>
+        <label className="label" htmlFor="quest-title">タイトル</label>
         <input
+          id="quest-title"
           name="title"
           className="input"
           defaultValue={quest?.title}
@@ -119,8 +119,9 @@ function QuestForm({
         />
       </div>
       <div>
-        <label className="label">説明</label>
+        <label className="label" htmlFor="quest-description">説明</label>
         <textarea
+          id="quest-description"
           name="description"
           className="input min-h-20"
           defaultValue={quest?.description}
@@ -128,16 +129,18 @@ function QuestForm({
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div>
-          <label className="label">カテゴリ</label>
+          <label className="label" htmlFor="quest-category">カテゴリ</label>
           <input
+            id="quest-category"
             name="category"
             className="input"
             defaultValue={quest?.category ?? "一般"}
           />
         </div>
         <div>
-          <label className="label">獲得ポイント</label>
+          <label className="label" htmlFor="quest-rewardPoints">獲得ポイント</label>
           <input
+            id="quest-rewardPoints"
             name="rewardPoints"
             type="number"
             min={0}
@@ -146,8 +149,9 @@ function QuestForm({
           />
         </div>
         <div>
-          <label className="label">検証方式</label>
+          <label className="label" htmlFor="quest-verification">検証方式</label>
           <select
+            id="quest-verification"
             name="verification"
             className="input"
             defaultValue={quest?.verification ?? "self"}
@@ -159,7 +163,7 @@ function QuestForm({
         </div>
       </div>
       <div>
-        <label className="label">習得スキル（クリアで付与）</label>
+        <p className="label">習得スキル（クリアで付与）</p>
         <div className="flex flex-wrap gap-2">
           {allSkills.map((s) => (
             <label

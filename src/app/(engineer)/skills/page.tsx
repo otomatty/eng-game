@@ -1,6 +1,6 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { questSkills, quests, skills } from "@/db/schema";
+import { questSkills, quests } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { getSkillTree } from "@/lib/domain";
 import { PageHeader } from "@/components/ui";
@@ -14,7 +14,8 @@ function computeLayers(nodes: Node[]): Node[][] {
   const depthCache = new Map<number, number>();
 
   function depth(id: number, seen = new Set<number>()): number {
-    if (depthCache.has(id)) return depthCache.get(id)!;
+    const cached = depthCache.get(id);
+    if (cached !== undefined) return cached;
     if (seen.has(id)) return 0;
     seen.add(id);
     const n = byId.get(id);

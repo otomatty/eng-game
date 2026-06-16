@@ -17,6 +17,7 @@ import {
 import { requireAdmin } from "@/lib/guards";
 import { completeQuestForUser, recomputeEstimatedRate } from "@/lib/domain";
 import { hashPassword } from "@/lib/auth";
+import { formString } from "@/lib/form";
 
 function ints(fd: FormData, key: string): number[] {
   return fd
@@ -31,14 +32,14 @@ export async function saveQuestAction(fd: FormData) {
   await requireAdmin();
   const id = Number(fd.get("id")) || null;
   const data = {
-    title: String(fd.get("title") ?? "").trim(),
-    description: String(fd.get("description") ?? "").trim(),
-    category: String(fd.get("category") ?? "一般").trim() || "一般",
+    title: formString(fd, "title").trim(),
+    description: formString(fd, "description").trim(),
+    category: formString(fd, "category", "一般").trim() || "一般",
     rewardPoints: Math.max(0, Number(fd.get("rewardPoints")) || 0),
-    verification: (String(fd.get("verification") ?? "self") as
+    verification: formString(fd, "verification", "self") as
       | "self"
       | "approval"
-      | "test"),
+      | "test",
     isPublished: fd.get("isPublished") === "on",
   };
   if (!data.title) throw new Error("タイトルは必須です");
@@ -52,7 +53,9 @@ export async function saveQuestAction(fd: FormData) {
     await db.delete(questSkills).where(eq(questSkills.questId, id));
   } else {
     const row = await db.insert(quests).values(data).returning();
-    questId = row[0].id;
+    const inserted = row[0];
+    if (!inserted) throw new Error("クエストの作成に失敗しました");
+    questId = inserted.id;
   }
   if (skillIds.length > 0) {
     await db
@@ -86,7 +89,7 @@ export async function approveAttemptAction(fd: FormData) {
   const attempt = (
     await db.select().from(questAttempts).where(eq(questAttempts.id, attemptId)).limit(1)
   )[0];
-  if (!attempt || attempt.status !== "submitted") return;
+  if (attempt?.status !== "submitted") return;
 
   await db
     .update(questAttempts)
@@ -101,7 +104,7 @@ export async function approveAttemptAction(fd: FormData) {
 export async function rejectAttemptAction(fd: FormData) {
   const admin = await requireAdmin();
   const attemptId = Number(fd.get("attemptId"));
-  const note = String(fd.get("reviewNote") ?? "").trim();
+  const note = formString(fd, "reviewNote").trim();
   await db
     .update(questAttempts)
     .set({ status: "rejected", approverId: admin.id, reviewNote: note })
@@ -118,9 +121,9 @@ export async function saveSkillAction(fd: FormData) {
   await requireAdmin();
   const id = Number(fd.get("id")) || null;
   const data = {
-    name: String(fd.get("name") ?? "").trim(),
-    category: String(fd.get("category") ?? "一般").trim() || "一般",
-    description: String(fd.get("description") ?? "").trim(),
+    name: formString(fd, "name").trim(),
+    category: formString(fd, "category", "一般").trim() || "一般",
+    description: formString(fd, "description").trim(),
   };
   if (!data.name) throw new Error("スキル名は必須です");
   if (id) {
@@ -169,8 +172,8 @@ export async function saveRateTierAction(fd: FormData) {
   await requireAdmin();
   const id = Number(fd.get("id")) || null;
   const data = {
-    name: String(fd.get("name") ?? "").trim(),
-    description: String(fd.get("description") ?? "").trim(),
+    name: formString(fd, "name").trim(),
+    description: formString(fd, "description").trim(),
     estimatedRate: Math.max(0, Number(fd.get("estimatedRate")) || 0),
     sortOrder: Number(fd.get("sortOrder")) || 0,
   };
@@ -184,7 +187,9 @@ export async function saveRateTierAction(fd: FormData) {
     await db.delete(rateTierSkills).where(eq(rateTierSkills.rateTierId, id));
   } else {
     const row = await db.insert(rateTiers).values(data).returning();
-    tierId = row[0].id;
+    const inserted = row[0];
+    if (!inserted) throw new Error("単価帯の作成に失敗しました");
+    tierId = inserted.id;
   }
   if (skillIds.length > 0) {
     await db
@@ -219,10 +224,10 @@ async function recomputeAllRates() {
 
 export async function createUserAction(fd: FormData) {
   await requireAdmin();
-  const name = String(fd.get("name") ?? "").trim();
-  const email = String(fd.get("email") ?? "").trim().toLowerCase();
-  const password = String(fd.get("password") ?? "");
-  const role = (String(fd.get("role") ?? "engineer") as "engineer" | "admin");
+  const name = formString(fd, "name").trim();
+  const email = formString(fd, "email").trim().toLowerCase();
+  const password = formString(fd, "password");
+  const role = formString(fd, "role", "engineer") as "engineer" | "admin";
   const teamId = Number(fd.get("teamId")) || null;
   if (!name || !email || !password) {
     throw new Error("氏名・メール・パスワードは必須です");
@@ -245,7 +250,7 @@ export async function createUserAction(fd: FormData) {
 export async function updateUserAction(fd: FormData) {
   await requireAdmin();
   const id = Number(fd.get("id"));
-  const role = (String(fd.get("role") ?? "engineer") as "engineer" | "admin");
+  const role = formString(fd, "role", "engineer") as "engineer" | "admin";
   const teamId = Number(fd.get("teamId")) || null;
   await db.update(users).set({ role, teamId }).where(eq(users.id, id));
   revalidatePath("/admin/users");
@@ -261,7 +266,7 @@ export async function deleteUserAction(fd: FormData) {
 
 export async function createTeamAction(fd: FormData) {
   await requireAdmin();
-  const name = String(fd.get("name") ?? "").trim();
+  const name = formString(fd, "name").trim();
   if (!name) throw new Error("チーム名は必須です");
   await db.insert(teams).values({ name });
   revalidatePath("/admin/users");

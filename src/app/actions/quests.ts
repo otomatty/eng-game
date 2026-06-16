@@ -6,12 +6,13 @@ import { db } from "@/db";
 import { questAttempts, quests } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { completeQuestForUser } from "@/lib/domain";
+import { formNumber, formString } from "@/lib/form";
 
 async function loadQuest(questId: number) {
   const q = (
     await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
   )[0];
-  if (!q || !q.isPublished) throw new Error("クエストが見つかりません");
+  if (!q?.isPublished) throw new Error("クエストが見つかりません");
   return q;
 }
 
@@ -35,7 +36,7 @@ async function latestAttempt(userId: number, questId: number) {
 /** クエストに挑戦開始（in_progress の記録を作成） */
 export async function startQuestAction(formData: FormData) {
   const user = await requireUser();
-  const questId = Number(formData.get("questId"));
+  const questId = formNumber(formData, "questId");
   await loadQuest(questId);
 
   const existing = await latestAttempt(user.id, questId);
@@ -60,14 +61,14 @@ export async function startQuestAction(formData: FormData) {
 /** 自己申告型: 即時クリア */
 export async function selfCompleteAction(formData: FormData) {
   const user = await requireUser();
-  const questId = Number(formData.get("questId"));
+  const questId = formNumber(formData, "questId");
   const quest = await loadQuest(questId);
   if (quest.verification !== "self") throw new Error("自己申告型ではありません");
 
   const existing = await latestAttempt(user.id, questId);
   if (existing && ["completed", "approved"].includes(existing.status)) return;
 
-  if (existing && existing.status === "in_progress") {
+  if (existing?.status === "in_progress") {
     await db
       .update(questAttempts)
       .set({ status: "completed", approvedAt: new Date() })
@@ -89,8 +90,8 @@ export async function selfCompleteAction(formData: FormData) {
 /** 成果物提出型: 提出して承認待ちにする */
 export async function submitForApprovalAction(formData: FormData) {
   const user = await requireUser();
-  const questId = Number(formData.get("questId"));
-  const submission = String(formData.get("submission") ?? "").trim();
+  const questId = formNumber(formData, "questId");
+  const submission = formString(formData, "submission").trim();
   const quest = await loadQuest(questId);
   if (quest.verification !== "approval")
     throw new Error("承認型ではありません");
@@ -128,8 +129,8 @@ export async function submitForApprovalAction(formData: FormData) {
  */
 export async function takeTestAction(formData: FormData) {
   const user = await requireUser();
-  const questId = Number(formData.get("questId"));
-  const answer = String(formData.get("answer") ?? "").trim().toLowerCase();
+  const questId = formNumber(formData, "questId");
+  const answer = formString(formData, "answer").trim().toLowerCase();
   const quest = await loadQuest(questId);
   if (quest.verification !== "test") throw new Error("テスト型ではありません");
 

@@ -13,7 +13,15 @@ function hash(pw: string) {
   return bcrypt.hashSync(pw, 10);
 }
 
-async function main() {
+/** シード内で必須の参照を取り出す（存在しなければ即エラー） */
+function req<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`seed: "${label}" が見つかりません`);
+  }
+  return value;
+}
+
+function main() {
   console.log("🌱 seeding...");
 
   // 既存データをクリア（冪等な再シード）
@@ -33,11 +41,13 @@ async function main() {
   `);
 
   // --- チーム ---
-  const [teamA, teamB] = db
+  const insertedTeams = db
     .insert(schema.teams)
     .values([{ name: "Alpha チーム" }, { name: "Beta チーム" }])
     .returning()
     .all();
+  const teamA = req(insertedTeams[0], "teamA");
+  const teamB = req(insertedTeams[1], "teamB");
 
   // --- スキル ---
   const skillDefs: Record<string, { category: string; description: string }> = {
@@ -86,8 +96,8 @@ async function main() {
   for (const [pre, unlocked] of deps) {
     db.insert(schema.skillDependencies)
       .values({
-        prerequisiteSkillId: skillIds[pre],
-        unlockedSkillId: skillIds[unlocked],
+        prerequisiteSkillId: req(skillIds[pre], pre),
+        unlockedSkillId: req(skillIds[unlocked], unlocked),
       })
       .run();
   }
@@ -113,7 +123,7 @@ async function main() {
       .get();
     for (const s of t.skills) {
       db.insert(schema.rateTierSkills)
-        .values({ rateTierId: tier.id, skillId: skillIds[s] })
+        .values({ rateTierId: tier.id, skillId: req(skillIds[s], s) })
         .run();
     }
   }
@@ -162,7 +172,7 @@ async function main() {
     questIdByTitle[q.title] = row.id;
     for (const s of q.skills) {
       db.insert(schema.questSkills)
-        .values({ questId: row.id, skillId: skillIds[s] })
+        .values({ questId: row.id, skillId: req(skillIds[s], s) })
         .run();
     }
   }
@@ -189,13 +199,13 @@ async function main() {
       .returning()
       .get();
     for (const s of e.skills) {
-      db.insert(schema.userSkills).values({ userId: u.id, skillId: skillIds[s] }).run();
+      db.insert(schema.userSkills).values({ userId: u.id, skillId: req(skillIds[s], s) }).run();
     }
     // 想定単価を計算
-    const acquired = new Set(e.skills.map((s) => skillIds[s]));
+    const acquired = new Set(e.skills.map((s) => req(skillIds[s], s)));
     let best = 0;
     for (const t of tierDefs) {
-      if (t.skills.length > 0 && t.skills.every((s) => acquired.has(skillIds[s])) && t.rate > best) {
+      if (t.skills.length > 0 && t.skills.every((s) => acquired.has(req(skillIds[s], s))) && t.rate > best) {
         best = t.rate;
       }
     }
@@ -207,7 +217,7 @@ async function main() {
   db.insert(schema.questAttempts)
     .values({
       userId: jiroRow.id,
-      questId: questIdByTitle["JavaScript で電卓を作る"],
+      questId: req(questIdByTitle["JavaScript で電卓を作る"], "JavaScript で電卓を作る"),
       status: "submitted",
       submission: "https://github.com/example/calculator （電卓アプリを作りました）",
       submittedAt: new Date(),
@@ -219,10 +229,11 @@ async function main() {
   console.log("   エンジニア: taro@example.com 他 / password");
 }
 
-main()
-  .then(() => sqlite.close())
-  .catch((e) => {
-    console.error(e);
-    sqlite.close();
-    process.exit(1);
-  });
+try {
+  main();
+  sqlite.close();
+} catch (e: unknown) {
+  console.error(e);
+  sqlite.close();
+  process.exit(1);
+}

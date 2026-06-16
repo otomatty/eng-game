@@ -37,6 +37,25 @@ npm run dev
 | 管理者 | `admin@example.com` |
 | エンジニア | `taro@example.com` / `hanako@example.com` / `misaki@example.com` / `jiro@example.com` / `ken@example.com` |
 
+## 開発フロー・品質チェック
+
+実装は **仕様検討 → テスト実装 → 本実装** の順で進めます。詳細なルールは
+[`CLAUDE.md`](CLAUDE.md) と [`docs/development-guidelines.md`](docs/development-guidelines.md) を参照してください。
+
+コミット前に、CI と同じチェックをローカルで実行します。
+
+```bash
+npm run lint        # LintCheck  : ESLint（厳格ルール）
+npm run typecheck   # Typecheck  : tsc --noEmit（厳格な型）
+npm run test        # Test       : Vitest（正常系・異常系・境界値）
+npm run build       # Buildcheck : next build
+
+npm run verify      # 上記 4 つをまとめて実行
+```
+
+`push` / Pull Request で GitHub Actions（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が
+LintCheck / Typecheck / Test / Buildcheck を並列実行します。
+
 ## 実装した画面（PRD 7章 / 14画面）
 
 ### エンジニア（プレイヤー）

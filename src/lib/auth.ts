@@ -58,10 +58,10 @@ export async function getCurrentUser() {
     .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date())))
     .limit(1);
 
-  if (rows.length === 0) return null;
-  const { users: user } = rows[0];
+  const row = rows[0];
+  if (!row) return null;
   // パスワードハッシュは返さない
-  const { passwordHash: _omit, ...safe } = user;
+  const { passwordHash: _omit, ...safe } = row.users;
   void _omit;
   return safe;
 }

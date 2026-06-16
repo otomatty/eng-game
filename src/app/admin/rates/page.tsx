@@ -92,8 +92,9 @@ function TierForm({
       {tier && <input type="hidden" name="id" value={tier.id} />}
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
-          <label className="label">単価帯名</label>
+          <label className="label" htmlFor="rate-name">単価帯名</label>
           <input
+            id="rate-name"
             name="name"
             className="input"
             defaultValue={tier?.name}
@@ -101,8 +102,9 @@ function TierForm({
           />
         </div>
         <div>
-          <label className="label">想定単価（万円）</label>
+          <label className="label" htmlFor="rate-estimatedRate">想定単価（万円）</label>
           <input
+            id="rate-estimatedRate"
             name="estimatedRate"
             type="number"
             min={0}
@@ -111,8 +113,9 @@ function TierForm({
           />
         </div>
         <div>
-          <label className="label">並び順</label>
+          <label className="label" htmlFor="rate-sortOrder">並び順</label>
           <input
+            id="rate-sortOrder"
             name="sortOrder"
             type="number"
             className="input"
@@ -121,15 +124,16 @@ function TierForm({
         </div>
       </div>
       <div>
-        <label className="label">説明</label>
+        <label className="label" htmlFor="rate-description">説明</label>
         <input
+          id="rate-description"
           name="description"
           className="input"
           defaultValue={tier?.description}
         />
       </div>
       <div>
-        <label className="label">到達条件スキル（すべて習得で到達）</label>
+        <p className="label">到達条件スキル（すべて習得で到達）</p>
         <div className="flex flex-wrap gap-2">
           {allSkills.map((s) => (
             <label

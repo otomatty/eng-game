@@ -27,7 +27,7 @@ export default async function QuestDetailPage({
   const quest = (
     await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
   )[0];
-  if (!quest || !quest.isPublished) notFound();
+  if (!quest?.isPublished) notFound();
 
   const grantSkills = await db
     .select({ id: skills.id, name: skills.name, category: skills.category })

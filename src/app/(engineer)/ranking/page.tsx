@@ -120,7 +120,7 @@ async function TeamRanking({ myTeamId }: { myTeamId: number | null }) {
               <p className="text-xs text-zen-sub">{r.memberCount} 名</p>
             </div>
             <p className="shrink-0 font-semibold text-zen-accent">
-              {Number(r.totalPoints).toLocaleString()}
+              {r.totalPoints.toLocaleString()}
               <span className="ml-0.5 text-xs font-normal text-zen-sub">pt</span>
             </p>
           </div>

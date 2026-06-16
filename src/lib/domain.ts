@@ -12,6 +12,12 @@ import {
   userSkills,
   users,
 } from "@/db/schema";
+import {
+  buildPrerequisiteMap,
+  computeSkillNodeFlags,
+  scoreQuestsByTargetSkills,
+  selectBestRate,
+} from "./domain-logic";
 
 /**
  * ドメインロジック（PRD 5章 コアループ）
@@ -38,21 +44,8 @@ export async function recomputeEstimatedRate(userId: number): Promise<number> {
   const tiers = await db.select().from(rateTiers);
   const tierSkillRows = await db.select().from(rateTierSkills);
 
-  const byTier = new Map<number, number[]>();
-  for (const r of tierSkillRows) {
-    const arr = byTier.get(r.rateTierId) ?? [];
-    arr.push(r.skillId);
-    byTier.set(r.rateTierId, arr);
-  }
-
-  let best = 0;
-  for (const tier of tiers) {
-    const required = byTier.get(tier.id) ?? [];
-    // 条件スキルが未設定の単価帯は到達条件なしとはみなさない（誤って高単価に到達するのを防ぐ）
-    if (required.length === 0) continue;
-    const reached = required.every((sid) => acquired.has(sid));
-    if (reached && tier.estimatedRate > best) best = tier.estimatedRate;
-  }
+  // 条件スキルが未設定の単価帯は到達扱いにしない（誤って高単価に到達するのを防ぐ）
+  const best = selectBestRate(tiers, tierSkillRows, acquired);
 
   await db
     .update(users)
@@ -96,27 +89,11 @@ export async function getSkillTree(userId: number) {
   const allSkills = await db.select().from(skills);
   const deps = await db.select().from(skillDependencies);
 
-  // 前提 → 開放 のマップ
-  const prereqsOf = new Map<number, number[]>();
-  for (const d of deps) {
-    const arr = prereqsOf.get(d.unlockedSkillId) ?? [];
-    arr.push(d.prerequisiteSkillId);
-    prereqsOf.set(d.unlockedSkillId, arr);
-  }
-
-  const nodes = allSkills.map((s) => {
-    const prereqs = prereqsOf.get(s.id) ?? [];
-    const isAcquired = acquired.has(s.id);
-    const unlockable =
-      !isAcquired && prereqs.every((p) => acquired.has(p));
-    return {
-      ...s,
-      acquired: isAcquired,
-      // 未習得 かつ 前提を満たす = 次に開放可能
-      unlockable,
-      prerequisiteIds: prereqs,
-    };
-  });
+  const prerequisiteMap = buildPrerequisiteMap(deps);
+  const nodes = allSkills.map((s) => ({
+    ...s,
+    ...computeSkillNodeFlags(s.id, prerequisiteMap, acquired),
+  }));
 
   return {
     nodes,
@@ -154,27 +131,15 @@ export async function getRecommendedQuests(userId: number, limit = 3) {
     .from(quests)
     .where(eq(quests.isPublished, true));
 
-  // クエスト → 付与スキル のマップ
   const qsRows = await db.select().from(questSkills);
-  const skillsOfQuest = new Map<number, number[]>();
-  for (const r of qsRows) {
-    const arr = skillsOfQuest.get(r.questId) ?? [];
-    arr.push(r.skillId);
-    skillsOfQuest.set(r.questId, arr);
-  }
+  const scored = scoreQuestsByTargetSkills(
+    publishedQuests,
+    qsRows,
+    new Set(targetSkillIds),
+    doneOrActive,
+  );
 
-  const targetSet = new Set(targetSkillIds);
-  const scored = publishedQuests
-    .filter((q) => !doneOrActive.has(q.id))
-    .map((q) => {
-      const grants = skillsOfQuest.get(q.id) ?? [];
-      const matched = grants.filter((sid) => targetSet.has(sid)).length;
-      return { quest: q, matched };
-    })
-    .filter((x) => x.matched > 0)
-    .sort((a, b) => b.matched - a.matched || a.quest.id - b.quest.id);
-
-  let result = scored.slice(0, limit).map((x) => x.quest);
+  let result = scored.slice(0, limit);
 
   // 開放可能スキルに紐づくクエストが無ければ、前提不要の入門クエストで補完
   if (result.length < limit) {
