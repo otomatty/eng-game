@@ -26,12 +26,9 @@ npm run dev
 - シードデータ（`src/db/seed-data.ts`）を変更したら `npm run db:seed:local` で再投入する
   （`drizzle/seed.sql` が再生成され、冪等に上書きされる）。
 
-### デモ用アカウント（パスワードはすべて `password`）
+### デモ用アカウント
 
-| ロール | メール |
-|---|---|
-| 管理者 | `admin@example.com` |
-| エンジニア | `taro@example.com` / `hanako@example.com` / `misaki@example.com` / `jiro@example.com` / `ken@example.com` |
+シードで投入されるデモアカウント一覧は [README](../README.md#デモ用アカウントパスワードはすべて-password) を参照（パスワードは既定で `password`、`SEED_DEFAULT_PASSWORD` で上書き可）。
 
 ---
 

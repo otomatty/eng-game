@@ -295,8 +295,10 @@ export function buildSeedSql(passwordHash: string): string {
     }
   });
 
-  // サンプルの承認待ち申請（高橋 次郎 = id 4 が「JavaScript で電卓を作る」を提出）
-  const jiroId = 4;
+  // サンプルの承認待ち申請（高橋 次郎 が「JavaScript で電卓を作る」を提出）。
+  // ENGINEER_DEFS の定義順が変わっても追従するよう動的に id を求める（管理者が id=1、エンジニアは id=2..）。
+  const jiroIndex = ENGINEER_DEFS.findIndex((e) => e.name === "高橋 次郎");
+  const jiroId = jiroIndex === -1 ? 4 : jiroIndex + 2;
   const calcQuestId = questIdByTitle.get("JavaScript で電卓を作る");
   if (calcQuestId !== undefined) {
     lines.push(

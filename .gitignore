@@ -16,6 +16,11 @@ next-env.d.ts
 # Cloudflare (OpenNext build output / local D1 emulation)
 /.open-next/
 /.wrangler/
+# wrangler のローカル秘密情報（誤コミット防止）
+/.dev.vars
+/.dev.vars.*
+# 自動生成されるシード SQL（db:seed:gen で再生成される）
+/drizzle/seed.sql
 
 # misc
 .DS_Store

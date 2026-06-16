@@ -1,6 +1,6 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { drizzle } from "drizzle-orm/d1";
+import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
 /**
@@ -11,7 +11,7 @@ import * as schema from "./schema";
  * シングルトンにはできない。各サーバー処理の先頭で `const db = getDb();`
  * のように取得して使う。
  */
-export function getDb() {
+export function getDb(): DrizzleD1Database<typeof schema> {
   const { env } = getCloudflareContext();
   return drizzle(env.DB, { schema });
 }

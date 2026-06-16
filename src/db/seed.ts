@@ -10,9 +10,16 @@ import { buildSeedSql } from "./seed-data";
  *   npm run db:seed:local   # ローカル D1（miniflare）
  *   npm run db:seed:remote  # 本番 D1
  *
- * パスワードはデモ用に全アカウント "password"（bcrypt ハッシュを埋め込む）。
+ * 初期パスワードは既定で "password"（デモ用）。本番投入時は環境変数
+ * `SEED_DEFAULT_PASSWORD` で上書きすること（既知パスワードの固定化を避ける）。
  */
-const passwordHash = bcrypt.hashSync("password", 10);
+const seedPassword = process.env.SEED_DEFAULT_PASSWORD ?? "password";
+if (seedPassword === "password") {
+  console.warn(
+    "⚠️  初期パスワードがデモ用の 'password' です。本番投入時は SEED_DEFAULT_PASSWORD を設定してください。",
+  );
+}
+const passwordHash = bcrypt.hashSync(seedPassword, 10);
 const sql = `-- このファイルは \`npm run db:seed:gen\` で自動生成されます。直接編集しないでください。\n${buildSeedSql(
   passwordHash,
 )}`;
@@ -24,4 +31,6 @@ fs.writeFileSync(outPath, sql, "utf8");
 
 console.log(`✅ seed SQL を生成しました: ${outPath}`);
 console.log("   投入: npm run db:seed:local  /  npm run db:seed:remote");
-console.log("   デモ用パスワードは全アカウント 'password'");
+console.log(
+  "   初期パスワード: SEED_DEFAULT_PASSWORD（未設定時はデモ用 'password'）",
+);
