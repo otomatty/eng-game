@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { sessions, users } from "@/db/schema";
 
 const SESSION_COOKIE = "eng_game_session";
@@ -22,6 +22,7 @@ export async function verifyPassword(
 
 /** ログイン: メール+パスワードを検証し、セッションを発行してCookieに保存 */
 export async function createSession(userId: number): Promise<void> {
+  const db = getDb();
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await db.insert(sessions).values({ id: token, userId, expiresAt });
@@ -37,6 +38,7 @@ export async function createSession(userId: number): Promise<void> {
 }
 
 export async function destroySession(): Promise<void> {
+  const db = getDb();
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) {
@@ -51,6 +53,7 @@ export async function getCurrentUser() {
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
+  const db = getDb();
   const rows = await db
     .select()
     .from(sessions)

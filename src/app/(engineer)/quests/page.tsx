@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { eq, inArray } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questAttempts, questSkills, quests, skills } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { PageHeader, QuestCard, StatusBadge } from "@/components/ui";
@@ -11,6 +11,7 @@ export default async function QuestListPage({
   searchParams: Promise<{ category?: string }>;
 }) {
   const user = await requireUser();
+  const db = getDb();
   const { category } = await searchParams;
 
   const published = await db

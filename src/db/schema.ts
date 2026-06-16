@@ -9,7 +9,7 @@ import {
 
 /**
  * PRD 8章 データモデルに対応する Drizzle スキーマ。
- * SQLite（ローカル）想定。将来 Cloudflare D1 へ移行可能。
+ * Cloudflare D1（SQLite 互換）を対象とする。
  */
 
 // 共通: 作成日時

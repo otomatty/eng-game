@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   quests,
   questAttempts,
@@ -30,6 +30,7 @@ import {
 
 /** ユーザーが習得済みのスキルID集合 */
 export async function getAcquiredSkillIds(userId: number): Promise<Set<number>> {
+  const db = getDb();
   const rows = await db
     .select({ skillId: userSkills.skillId })
     .from(userSkills)
@@ -39,6 +40,7 @@ export async function getAcquiredSkillIds(userId: number): Promise<Set<number>> 
 
 /** 想定単価を再計算し、users.current_estimated_rate を更新して返す */
 export async function recomputeEstimatedRate(userId: number): Promise<number> {
+  const db = getDb();
   const acquired = await getAcquiredSkillIds(userId);
 
   const tiers = await db.select().from(rateTiers);
@@ -56,6 +58,7 @@ export async function recomputeEstimatedRate(userId: number): Promise<number> {
 
 /** 到達済み・到達可能な単価帯の状況を取得（単価レンジ画面用） */
 export async function getRateTierStatus(userId: number) {
+  const db = getDb();
   const acquired = await getAcquiredSkillIds(userId);
   const tiers = await db.select().from(rateTiers).orderBy(rateTiers.sortOrder);
   const tierSkillRows = await db
@@ -85,6 +88,7 @@ export async function getRateTierStatus(userId: number) {
 
 /** スキルツリー（全スキル＋前提関係＋習得状態） */
 export async function getSkillTree(userId: number) {
+  const db = getDb();
   const acquired = await getAcquiredSkillIds(userId);
   const allSkills = await db.select().from(skills);
   const deps = await db.select().from(skillDependencies);
@@ -106,6 +110,7 @@ export async function getSkillTree(userId: number) {
 
 /** 「次の一手」レコメンド: 次に開放可能なスキルに紐づく未完了の公開クエスト */
 export async function getRecommendedQuests(userId: number, limit = 3) {
+  const db = getDb();
   const { nodes } = await getSkillTree(userId);
   const targetSkillIds = nodes
     .filter((n) => n.unlockable)
@@ -159,6 +164,7 @@ export async function completeQuestForUser(
   userId: number,
   questId: number,
 ): Promise<void> {
+  const db = getDb();
   const quest = (
     await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
   )[0];

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   questAttempts,
   quests,
@@ -13,6 +13,7 @@ import { PageHeader, StatCard, StatusBadge } from "@/components/ui";
 
 export default async function AdminDashboard() {
   await requireAdmin();
+  const db = getDb();
 
   const [
     pendingRows,

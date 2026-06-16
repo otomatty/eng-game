@@ -11,24 +11,28 @@
 |---|---|
 | フレームワーク | Next.js 16（App Router） / React 19 / TypeScript |
 | スタイリング | Tailwind CSS（禅・ミニマルなトーン） |
-| DB / ORM | SQLite + Drizzle ORM（将来 Cloudflare D1 へ移行可能） |
+| DB / ORM | Cloudflare D1（SQLite 互換） + Drizzle ORM |
+| デプロイ | Cloudflare Workers（[`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare)） |
 | 認証 | メール+パスワードの内部認証（bcrypt + セッションCookie） |
 
-> PRD ではデプロイ先に Cloudflare（Pages/Workers/D1）を想定。Drizzle + SQLite 構成は D1 への移行を見据えています。
+> データは Cloudflare D1 に保存し、`@opennextjs/cloudflare` で Workers 上にデプロイします。
+> ローカル開発も `next dev` が D1 バインディングをエミュレートするため、本番と同一コードで動作します。
+> 詳細な手順は [`docs/deployment.md`](docs/deployment.md) を参照してください。
 
 ## セットアップ
 
 ```bash
 npm install
 
-# DB 初期化（マイグレーション + シードデータ投入）
-npm run db:migrate
-npm run db:seed
+# ローカル D1 を作成しマイグレーション + シードを投入
+npm run db:setup:local
 
 # 開発サーバー
 npm run dev
 # → http://localhost:3000
 ```
+
+本番（Cloudflare）へのデプロイは [`docs/deployment.md`](docs/deployment.md) を参照。
 
 ### デモ用アカウント（パスワードはすべて `password`）
 

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { createSession, destroySession, verifyPassword } from "@/lib/auth";
 import { formString } from "@/lib/form";
@@ -18,6 +18,7 @@ export async function loginAction(
     return { error: "メールアドレスとパスワードを入力してください。" };
   }
 
+  const db = getDb();
   const user = (
     await db.select().from(users).where(eq(users.email, email)).limit(1)
   )[0];

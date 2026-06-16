@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questSkills, quests } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { getSkillTree } from "@/lib/domain";
@@ -44,6 +44,7 @@ function nodeStyle(n: Node): string {
 
 export default async function SkillTreePage() {
   const user = await requireUser();
+  const db = getDb();
   const { nodes } = await getSkillTree(user.id);
   const layers = computeLayers(nodes);
   const byId = new Map(nodes.map((n) => [n.id, n]));

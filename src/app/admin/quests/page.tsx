@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questSkills, quests, skills } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import {
@@ -12,6 +12,7 @@ type QuestRow = typeof quests.$inferSelect;
 
 export default async function AdminQuestsPage() {
   await requireAdmin();
+  const db = getDb();
 
   const allQuests = await db.select().from(quests).orderBy(quests.id);
   const allSkills = await db.select().from(skills).orderBy(skills.category, skills.name);

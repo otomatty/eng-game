@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questAttempts, questSkills, quests, skills } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { getAcquiredSkillIds } from "@/lib/domain";
@@ -23,6 +23,7 @@ export default async function QuestDetailPage({
   const { id } = await params;
   const questId = Number(id);
   if (Number.isNaN(questId)) notFound();
+  const db = getDb();
 
   const quest = (
     await db.select().from(quests).where(eq(quests.id, questId)).limit(1)

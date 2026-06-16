@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   questAttempts,
   quests,
@@ -13,6 +13,7 @@ import { PageHeader, StatCard, StatusBadge } from "@/components/ui";
 
 export default async function ProfilePage() {
   const user = await requireUser();
+  const db = getDb();
 
   const [team] = user.teamId
     ? await db.select().from(teams).where(eq(teams.id, user.teamId)).limit(1)

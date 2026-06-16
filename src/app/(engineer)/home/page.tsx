@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { eq, inArray } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questSkills, skills } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { getRecommendedQuests, getRateTierStatus } from "@/lib/domain";
@@ -9,6 +9,7 @@ import { QuestCard, StatCard } from "@/components/ui";
 
 export default async function HomePage() {
   const user = await requireUser();
+  const db = getDb();
 
   const [skillCount, rank, recommended, tierStatus] = await Promise.all([
     getAcquiredSkillCount(user.id),
