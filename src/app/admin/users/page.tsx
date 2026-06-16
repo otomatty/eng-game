@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { teams, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import {
@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui";
 
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
+  const db = getDb();
 
   const allTeams = await db.select().from(teams).orderBy(teams.id);
   const allUsers = await db

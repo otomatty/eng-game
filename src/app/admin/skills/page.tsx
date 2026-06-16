@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { skillDependencies, skills } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import {
@@ -13,6 +13,7 @@ type SkillRow = typeof skills.$inferSelect;
 
 export default async function AdminSkillsPage() {
   await requireAdmin();
+  const db = getDb();
 
   const allSkills = await db
     .select()

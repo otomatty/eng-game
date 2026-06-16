@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { rateTierSkills, rateTiers, skills } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import {
@@ -11,6 +11,7 @@ type TierRow = typeof rateTiers.$inferSelect;
 
 export default async function AdminRatesPage() {
   await requireAdmin();
+  const db = getDb();
 
   const tiers = await db.select().from(rateTiers).orderBy(rateTiers.sortOrder);
   const allSkills = await db

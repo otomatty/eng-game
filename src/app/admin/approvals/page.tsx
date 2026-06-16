@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questAttempts, quests, skills, questSkills, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import { approveAttemptAction, rejectAttemptAction } from "@/app/actions/admin";
@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui";
 
 export default async function ApprovalsPage() {
   await requireAdmin();
+  const db = getDb();
 
   const pending = await db
     .select({

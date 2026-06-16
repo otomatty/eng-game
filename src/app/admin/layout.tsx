@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questAttempts } from "@/db/schema";
 import { SideNav, type NavItem } from "@/components/nav";
 import { requireAdmin } from "@/lib/guards";
@@ -20,6 +20,7 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const admin = await requireAdmin();
+  const db = getDb();
 
   const pending = (
     await db

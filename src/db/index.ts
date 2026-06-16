@@ -1,21 +1,19 @@
 import "server-only";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
-const dbPath = process.env.DATABASE_URL ?? path.join(process.cwd(), "data", "app.db");
-
-// data ディレクトリを確保
-const dir = path.dirname(dbPath);
-if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir, { recursive: true });
+/**
+ * リクエストスコープの Cloudflare D1 バインディング（env.DB）から
+ * Drizzle クライアントを生成する。
+ *
+ * D1 はリクエストコンテキスト経由でのみアクセスできるため、モジュール
+ * シングルトンにはできない。各サーバー処理の先頭で `const db = getDb();`
+ * のように取得して使う。
+ */
+export function getDb() {
+  const { env } = getCloudflareContext();
+  return drizzle(env.DB, { schema });
 }
 
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-
-export const db = drizzle(sqlite, { schema });
 export { schema };

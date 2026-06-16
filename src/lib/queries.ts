@@ -1,10 +1,11 @@
 import "server-only";
 import { desc, eq, sql } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { teams, userSkills, users } from "@/db/schema";
 
 /** 個人ランキング（累積ポイント降順） */
 export async function getUserRanking() {
+  const db = getDb();
   const rows = await db
     .select({
       id: users.id,
@@ -30,6 +31,7 @@ export async function getUserRank(userId: number): Promise<number | null> {
 
 /** チームランキング（チーム所属エンジニアの合計ポイント降順） */
 export async function getTeamRanking() {
+  const db = getDb();
   const rows = await db
     .select({
       teamId: teams.id,
@@ -50,6 +52,7 @@ export async function getTeamRanking() {
 
 /** ユーザーの習得スキル数 */
 export async function getAcquiredSkillCount(userId: number): Promise<number> {
+  const db = getDb();
   const rows = await db
     .select({ c: sql<number>`COUNT(*)` })
     .from(userSkills)

@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { questAttempts, quests } from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { completeQuestForUser } from "@/lib/domain";
 import { formNumber, formString } from "@/lib/form";
 
 async function loadQuest(questId: number) {
+  const db = getDb();
   const q = (
     await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
   )[0];
@@ -18,6 +19,7 @@ async function loadQuest(questId: number) {
 
 /** 最新の挑戦記録を取得 */
 async function latestAttempt(userId: number, questId: number) {
+  const db = getDb();
   return (
     await db
       .select()
@@ -36,6 +38,7 @@ async function latestAttempt(userId: number, questId: number) {
 /** クエストに挑戦開始（in_progress の記録を作成） */
 export async function startQuestAction(formData: FormData) {
   const user = await requireUser();
+  const db = getDb();
   const questId = formNumber(formData, "questId");
   await loadQuest(questId);
 
@@ -61,6 +64,7 @@ export async function startQuestAction(formData: FormData) {
 /** 自己申告型: 即時クリア */
 export async function selfCompleteAction(formData: FormData) {
   const user = await requireUser();
+  const db = getDb();
   const questId = formNumber(formData, "questId");
   const quest = await loadQuest(questId);
   if (quest.verification !== "self") throw new Error("自己申告型ではありません");
@@ -90,6 +94,7 @@ export async function selfCompleteAction(formData: FormData) {
 /** 成果物提出型: 提出して承認待ちにする */
 export async function submitForApprovalAction(formData: FormData) {
   const user = await requireUser();
+  const db = getDb();
   const questId = formNumber(formData, "questId");
   const submission = formString(formData, "submission").trim();
   const quest = await loadQuest(questId);
@@ -129,6 +134,7 @@ export async function submitForApprovalAction(formData: FormData) {
  */
 export async function takeTestAction(formData: FormData) {
   const user = await requireUser();
+  const db = getDb();
   const questId = formNumber(formData, "questId");
   const answer = formString(formData, "answer").trim().toLowerCase();
   const quest = await loadQuest(questId);

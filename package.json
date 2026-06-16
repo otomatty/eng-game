@@ -7,6 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -15,13 +18,16 @@
     "test:coverage": "vitest run --coverage",
     "verify": "npm run lint && npm run typecheck && npm run test:ci && npm run build",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts",
-    "db:reset": "rm -f data/app.db && npm run db:migrate && npm run db:seed"
+    "db:seed:gen": "tsx src/db/seed.ts",
+    "db:migrate:local": "wrangler d1 migrations apply eng-game-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply eng-game-db --remote",
+    "db:seed:local": "npm run db:seed:gen && wrangler d1 execute eng-game-db --local --file=./drizzle/seed.sql",
+    "db:seed:remote": "npm run db:seed:gen && wrangler d1 execute eng-game-db --remote --file=./drizzle/seed.sql",
+    "db:setup:local": "npm run db:migrate:local && npm run db:seed:local"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.19.11",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.8.1",
     "drizzle-orm": "^0.45.2",
     "next": "^16.2.9",
     "react": "^19.2.7",
@@ -29,13 +35,13 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260616.1",
     "@eslint/js": "^9.39.4",
     "@next/eslint-plugin-next": "^16.2.9",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
@@ -54,6 +60,7 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.61.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.100.0"
   }
 }

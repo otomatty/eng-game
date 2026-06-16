@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   questAttempts,
   questSkills,
@@ -30,6 +30,7 @@ function ints(fd: FormData, key: string): number[] {
 
 export async function saveQuestAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id")) || null;
   const data = {
     title: formString(fd, "title").trim(),
@@ -68,6 +69,7 @@ export async function saveQuestAction(fd: FormData) {
 
 export async function deleteQuestAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   await db.delete(quests).where(eq(quests.id, id));
   revalidatePath("/admin/quests");
@@ -75,6 +77,7 @@ export async function deleteQuestAction(fd: FormData) {
 
 export async function toggleQuestPublishAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   const publish = fd.get("publish") === "true";
   await db.update(quests).set({ isPublished: publish }).where(eq(quests.id, id));
@@ -85,6 +88,7 @@ export async function toggleQuestPublishAction(fd: FormData) {
 
 export async function approveAttemptAction(fd: FormData) {
   const admin = await requireAdmin();
+  const db = getDb();
   const attemptId = Number(fd.get("attemptId"));
   const attempt = (
     await db.select().from(questAttempts).where(eq(questAttempts.id, attemptId)).limit(1)
@@ -103,6 +107,7 @@ export async function approveAttemptAction(fd: FormData) {
 
 export async function rejectAttemptAction(fd: FormData) {
   const admin = await requireAdmin();
+  const db = getDb();
   const attemptId = Number(fd.get("attemptId"));
   const note = formString(fd, "reviewNote").trim();
   await db
@@ -119,6 +124,7 @@ export async function rejectAttemptAction(fd: FormData) {
 
 export async function saveSkillAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id")) || null;
   const data = {
     name: formString(fd, "name").trim(),
@@ -136,6 +142,7 @@ export async function saveSkillAction(fd: FormData) {
 
 export async function deleteSkillAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   await db.delete(skills).where(eq(skills.id, id));
   revalidatePath("/admin/skills");
@@ -143,6 +150,7 @@ export async function deleteSkillAction(fd: FormData) {
 
 export async function addDependencyAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const prerequisiteSkillId = Number(fd.get("prerequisiteSkillId"));
   const unlockedSkillId = Number(fd.get("unlockedSkillId"));
   if (
@@ -161,6 +169,7 @@ export async function addDependencyAction(fd: FormData) {
 
 export async function removeDependencyAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   await db.delete(skillDependencies).where(eq(skillDependencies.id, id));
   revalidatePath("/admin/skills");
@@ -170,6 +179,7 @@ export async function removeDependencyAction(fd: FormData) {
 
 export async function saveRateTierAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id")) || null;
   const data = {
     name: formString(fd, "name").trim(),
@@ -204,6 +214,7 @@ export async function saveRateTierAction(fd: FormData) {
 
 export async function deleteRateTierAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   await db.delete(rateTiers).where(eq(rateTiers.id, id));
   await recomputeAllRates();
@@ -211,6 +222,7 @@ export async function deleteRateTierAction(fd: FormData) {
 }
 
 async function recomputeAllRates() {
+  const db = getDb();
   const engineers = await db
     .select({ id: users.id })
     .from(users)
@@ -224,6 +236,7 @@ async function recomputeAllRates() {
 
 export async function createUserAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const name = formString(fd, "name").trim();
   const email = formString(fd, "email").trim().toLowerCase();
   const password = formString(fd, "password");
@@ -249,6 +262,7 @@ export async function createUserAction(fd: FormData) {
 
 export async function updateUserAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   const role = formString(fd, "role", "engineer") as "engineer" | "admin";
   const teamId = Number(fd.get("teamId")) || null;
@@ -258,6 +272,7 @@ export async function updateUserAction(fd: FormData) {
 
 export async function deleteUserAction(fd: FormData) {
   const admin = await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   if (id === admin.id) throw new Error("自分自身は削除できません");
   await db.delete(users).where(eq(users.id, id));
@@ -266,6 +281,7 @@ export async function deleteUserAction(fd: FormData) {
 
 export async function createTeamAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const name = formString(fd, "name").trim();
   if (!name) throw new Error("チーム名は必須です");
   await db.insert(teams).values({ name });
@@ -274,6 +290,7 @@ export async function createTeamAction(fd: FormData) {
 
 export async function deleteTeamAction(fd: FormData) {
   await requireAdmin();
+  const db = getDb();
   const id = Number(fd.get("id"));
   await db.delete(teams).where(eq(teams.id, id));
   revalidatePath("/admin/users");
