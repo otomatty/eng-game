@@ -9,13 +9,13 @@ import {
   takeTestAction,
 } from "@/app/actions/quests";
 
-type Props = {
+interface Props {
   questId: number;
   verification: "self" | "approval" | "test";
   status?: string;
   reviewNote?: string;
   submission?: string;
-};
+}
 
 export function QuestActions({
   questId,
@@ -79,7 +79,7 @@ export function QuestActions({
         <button
           className="btn-primary w-full"
           disabled={pending}
-          onClick={() => run(() => selfCompleteAction(fd()))}
+          onClick={() => { run(() => selfCompleteAction(fd())); }}
         >
           {pending ? "処理中…" : "クリアを申告する"}
         </button>
@@ -87,12 +87,13 @@ export function QuestActions({
 
       {verification === "approval" && (
         <div className="space-y-2">
-          <label className="label">成果物のURL / 説明</label>
+          <label className="label" htmlFor="submission-text">成果物のURL / 説明</label>
           <textarea
+            id="submission-text"
             className="input min-h-24"
             placeholder="例: https://github.com/... 作ったものの説明を添えてください"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => { setText(e.target.value); }}
           />
           <button
             className="btn-primary w-full"
@@ -110,12 +111,13 @@ export function QuestActions({
 
       {verification === "test" && (
         <div className="space-y-2">
-          <label className="label">テストの解答</label>
+          <label className="label" htmlFor="test-answer">テストの解答</label>
           <input
+            id="test-answer"
             className="input"
             placeholder="解答を入力（デモ: pass で合格）"
             value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
+            onChange={(e) => { setAnswer(e.target.value); }}
           />
           <button
             className="btn-primary w-full"
@@ -135,7 +137,7 @@ export function QuestActions({
         <button
           className="btn-ghost w-full"
           disabled={pending}
-          onClick={() => run(() => startQuestAction(fd()))}
+          onClick={() => { run(() => startQuestAction(fd())); }}
         >
           まず「挑戦中」にする
         </button>

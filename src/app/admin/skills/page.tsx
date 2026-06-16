@@ -71,8 +71,13 @@ export default async function AdminSkillsPage() {
             className="flex flex-wrap items-end gap-3"
           >
             <div className="flex-1">
-              <label className="label">前提スキル</label>
-              <select name="prerequisiteSkillId" className="input" required>
+              <label className="label" htmlFor="dep-prerequisite">前提スキル</label>
+              <select
+                id="dep-prerequisite"
+                name="prerequisiteSkillId"
+                className="input"
+                required
+              >
                 <option value="">選択…</option>
                 {allSkills.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -83,8 +88,13 @@ export default async function AdminSkillsPage() {
             </div>
             <span className="pb-2 text-zen-sub">→ 開放</span>
             <div className="flex-1">
-              <label className="label">開放されるスキル</label>
-              <select name="unlockedSkillId" className="input" required>
+              <label className="label" htmlFor="dep-unlocked">開放されるスキル</label>
+              <select
+                id="dep-unlocked"
+                name="unlockedSkillId"
+                className="input"
+                required
+              >
                 <option value="">選択…</option>
                 {allSkills.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -138,8 +148,9 @@ function SkillForm({ skill }: { skill?: SkillRow }) {
       {skill && <input type="hidden" name="id" value={skill.id} />}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="label">スキル名</label>
+          <label className="label" htmlFor="skill-name">スキル名</label>
           <input
+            id="skill-name"
             name="name"
             className="input"
             defaultValue={skill?.name}
@@ -147,8 +158,9 @@ function SkillForm({ skill }: { skill?: SkillRow }) {
           />
         </div>
         <div>
-          <label className="label">カテゴリ</label>
+          <label className="label" htmlFor="skill-category">カテゴリ</label>
           <input
+            id="skill-category"
             name="category"
             className="input"
             defaultValue={skill?.category ?? "一般"}
@@ -156,8 +168,9 @@ function SkillForm({ skill }: { skill?: SkillRow }) {
         </div>
       </div>
       <div>
-        <label className="label">説明</label>
+        <label className="label" htmlFor="skill-description">説明</label>
         <input
+          id="skill-description"
           name="description"
           className="input"
           defaultValue={skill?.description}

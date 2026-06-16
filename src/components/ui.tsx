@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { clampPercent } from "@/lib/domain-logic";
 
 export function PageHeader({
   title,
@@ -44,7 +45,7 @@ export function StatCard({
 }
 
 export function ProgressBar({ value }: { value: number }) {
-  const pct = Math.max(0, Math.min(100, Math.round(value)));
+  const pct = clampPercent(value);
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-zen-line">
       <div

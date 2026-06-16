@@ -5,9 +5,13 @@
 /.next/
 /out/
 next-env.d.ts
+*.tsbuildinfo
 
 # production
 /build
+
+# test coverage
+/coverage
 
 # local database
 /data/*.db

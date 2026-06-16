@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { questAttempts, questSkills, quests, skills } from "@/db/schema";
 import { requireUser } from "@/lib/guards";

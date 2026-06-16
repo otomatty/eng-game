@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export type NavItem = { href: string; label: string; icon: string };
+export interface NavItem { href: string; label: string; icon: string }
 
 export function SideNav({
   items,
