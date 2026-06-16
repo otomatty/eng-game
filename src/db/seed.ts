@@ -169,11 +169,10 @@ async function main() {
 
   // --- ユーザー ---
   const pw = hash("password");
-  const admin = db
+  db
     .insert(schema.users)
     .values({ name: "運営 管理者", email: "admin@example.com", passwordHash: pw, role: "admin", teamId: teamA.id })
-    .returning()
-    .get();
+    .run();
 
   const engineerDefs: { name: string; email: string; team: number; skills: string[]; points: number }[] = [
     { name: "佐藤 太郎", email: "taro@example.com", team: teamA.id, skills: ["HTML/CSS", "JavaScript", "Git", "TypeScript"], points: 450 },
@@ -215,7 +214,6 @@ async function main() {
     })
     .run();
 
-  void admin;
   console.log("✅ seed complete");
   console.log("   管理者:  admin@example.com / password");
   console.log("   エンジニア: taro@example.com 他 / password");
