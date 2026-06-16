@@ -6,6 +6,7 @@ import {
   saveRateTierAction,
 } from "@/app/actions/admin";
 import { PageHeader } from "@/components/ui";
+import { ActionForm } from "@/components/action-form";
 
 type TierRow = typeof rateTiers.$inferSelect;
 
@@ -89,7 +90,7 @@ function TierForm({
 }) {
   const selected = new Set(selectedSkillIds);
   return (
-    <form action={saveRateTierAction} className="space-y-3">
+    <ActionForm action={saveRateTierAction} className="space-y-3">
       {tier && <input type="hidden" name="id" value={tier.id} />}
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
@@ -154,6 +155,6 @@ function TierForm({
         </div>
       </div>
       <button className="btn-primary">{tier ? "更新する" : "作成する"}</button>
-    </form>
+    </ActionForm>
   );
 }

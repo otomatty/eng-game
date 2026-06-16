@@ -4,6 +4,7 @@ import { questAttempts, quests, skills, questSkills, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import { approveAttemptAction, rejectAttemptAction } from "@/app/actions/admin";
 import { PageHeader } from "@/components/ui";
+import { ActionForm } from "@/components/action-form";
 
 export default async function ApprovalsPage() {
   await requireAdmin();
@@ -78,18 +79,17 @@ export default async function ApprovalsPage() {
                     承認する
                   </button>
                 </form>
-                <form
-                  action={rejectAttemptAction}
-                  className="flex flex-1 gap-2"
-                >
-                  <input type="hidden" name="attemptId" value={p.id} />
-                  <input
-                    name="reviewNote"
-                    className="input"
-                    placeholder="差し戻し理由（任意）"
-                  />
-                  <button className="btn-danger shrink-0">差し戻し</button>
-                </form>
+                <ActionForm action={rejectAttemptAction} className="flex-1">
+                  <div className="flex gap-2">
+                    <input type="hidden" name="attemptId" value={p.id} />
+                    <input
+                      name="reviewNote"
+                      className="input"
+                      placeholder="差し戻し理由（任意）"
+                    />
+                    <button className="btn-danger shrink-0">差し戻し</button>
+                  </div>
+                </ActionForm>
               </div>
             </div>
           ))}

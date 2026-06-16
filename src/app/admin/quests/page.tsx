@@ -7,6 +7,7 @@ import {
   toggleQuestPublishAction,
 } from "@/app/actions/admin";
 import { PageHeader, VerificationBadge } from "@/components/ui";
+import { ActionForm } from "@/components/action-form";
 
 type QuestRow = typeof quests.$inferSelect;
 
@@ -107,7 +108,7 @@ function QuestForm({
 }) {
   const selected = new Set(selectedSkillIds);
   return (
-    <form action={saveQuestAction} className="space-y-3">
+    <ActionForm action={saveQuestAction} className="space-y-3">
       {quest && <input type="hidden" name="id" value={quest.id} />}
       <div>
         <label className="label" htmlFor="quest-title">タイトル</label>
@@ -197,6 +198,6 @@ function QuestForm({
           {quest ? "更新する" : "作成する"}
         </button>
       </div>
-    </form>
+    </ActionForm>
   );
 }

@@ -1,0 +1,384 @@
+import { describe, it, expect } from "vitest";
+import {
+  LIMITS,
+  addDependencySchema,
+  createTeamSchema,
+  createUserSchema,
+  firstError,
+  loginSchema,
+  questIdSchema,
+  rejectAttemptSchema,
+  roleEnum,
+  saveQuestSchema,
+  saveRateTierSchema,
+  saveSkillSchema,
+  submitForApprovalSchema,
+  takeTestSchema,
+  toggleQuestPublishSchema,
+  updateUserSchema,
+  verificationEnum,
+} from "./schemas";
+
+/**
+ * 観点表（仕様検討の成果 / Issue #3）
+ *
+ * 各サーバーアクションの外部入力スキーマについて、以下を検証する。
+ * - 正常系: 妥当な入力でパース成功し、想定どおりの型へ変換される。
+ * - 異常系: 列挙外・型不一致・必須欠落・負数・上限超過でエラーになる。
+ * - 境界値: 0 / 空文字 / 最大長ちょうど / 前後空白のトリム / 全角数字。
+ */
+
+describe("saveQuestSchema（クエスト作成・更新）", () => {
+  const valid = {
+    title: "TypeScript 入門",
+    description: "型の基礎を学ぶ",
+    category: "プログラミング",
+    rewardPoints: "100",
+    verification: "self",
+    skillIds: ["1", "2"],
+  };
+
+  describe("正常系", () => {
+    it("妥当な入力をパースし、数値・配列へ変換する", () => {
+      const r = saveQuestSchema.parse(valid);
+      expect(r.title).toBe("TypeScript 入門");
+      expect(r.rewardPoints).toBe(100);
+      expect(r.verification).toBe("self");
+      expect(r.skillIds).toEqual([1, 2]);
+      expect(r.isPublished).toBe(false);
+    });
+
+    it("チェックボックス isPublished='on' を true に変換する", () => {
+      const r = saveQuestSchema.parse({ ...valid, isPublished: "on" });
+      expect(r.isPublished).toBe(true);
+    });
+
+    it("id 未指定は undefined（新規作成）になる", () => {
+      expect(saveQuestSchema.parse(valid).id).toBeUndefined();
+    });
+
+    it("id 指定時は正の整数へ変換する（更新）", () => {
+      expect(saveQuestSchema.parse({ ...valid, id: "7" }).id).toBe(7);
+    });
+  });
+
+  describe("異常系", () => {
+    it("タイトルが空だとエラー", () => {
+      expect(saveQuestSchema.safeParse({ ...valid, title: "" }).success).toBe(
+        false,
+      );
+    });
+
+    it("検証方式が列挙外だとエラー", () => {
+      expect(
+        saveQuestSchema.safeParse({ ...valid, verification: "unknown" }).success,
+      ).toBe(false);
+    });
+
+    it("獲得ポイントが負数だとエラー", () => {
+      expect(
+        saveQuestSchema.safeParse({ ...valid, rewardPoints: "-1" }).success,
+      ).toBe(false);
+    });
+
+    it("獲得ポイントが上限超過だとエラー", () => {
+      expect(
+        saveQuestSchema.safeParse({
+          ...valid,
+          rewardPoints: String(LIMITS.rewardPoints + 1),
+        }).success,
+      ).toBe(false);
+    });
+
+    it("獲得ポイントが小数だとエラー", () => {
+      expect(
+        saveQuestSchema.safeParse({ ...valid, rewardPoints: "10.5" }).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("境界値", () => {
+    it("獲得ポイント 0 は許可される", () => {
+      expect(saveQuestSchema.parse({ ...valid, rewardPoints: "0" }).rewardPoints).toBe(
+        0,
+      );
+    });
+
+    it("タイトルの前後空白はトリムされる", () => {
+      expect(saveQuestSchema.parse({ ...valid, title: "  abc  " }).title).toBe(
+        "abc",
+      );
+    });
+
+    it("タイトルが最大長ちょうどは許可される", () => {
+      const title = "あ".repeat(LIMITS.title);
+      expect(saveQuestSchema.parse({ ...valid, title }).title).toBe(title);
+    });
+
+    it("タイトルが最大長+1 だとエラー", () => {
+      const title = "あ".repeat(LIMITS.title + 1);
+      expect(saveQuestSchema.safeParse({ ...valid, title }).success).toBe(false);
+    });
+
+    it("カテゴリが空文字なら「一般」にフォールバックする", () => {
+      expect(saveQuestSchema.parse({ ...valid, category: "" }).category).toBe(
+        "一般",
+      );
+    });
+
+    it("全角数字の獲得ポイントはエラー（半角数値のみ許可）", () => {
+      expect(
+        saveQuestSchema.safeParse({ ...valid, rewardPoints: "１００" }).success,
+      ).toBe(false);
+    });
+
+    it("skillIds 未指定は空配列になる", () => {
+      const { skillIds: _omit, ...rest } = valid;
+      void _omit;
+      expect(saveQuestSchema.parse(rest).skillIds).toEqual([]);
+    });
+  });
+});
+
+describe("toggleQuestPublishSchema（公開トグル）", () => {
+  it("publish='true' を真偽値に変換する", () => {
+    const r = toggleQuestPublishSchema.parse({ id: "3", publish: "true" });
+    expect(r).toEqual({ id: 3, publish: true });
+  });
+  it("publish='false' は false になる", () => {
+    expect(
+      toggleQuestPublishSchema.parse({ id: "3", publish: "false" }).publish,
+    ).toBe(false);
+  });
+  it("id が 0 だとエラー（正の整数が必須）", () => {
+    expect(
+      toggleQuestPublishSchema.safeParse({ id: "0", publish: "true" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("rejectAttemptSchema（差し戻し）", () => {
+  it("理由は任意（未指定は空文字）", () => {
+    expect(rejectAttemptSchema.parse({ attemptId: "1" }).reviewNote).toBe("");
+  });
+  it("attemptId が数値でないとエラー", () => {
+    expect(rejectAttemptSchema.safeParse({ attemptId: "abc" }).success).toBe(
+      false,
+    );
+  });
+  it("理由が上限超過だとエラー", () => {
+    expect(
+      rejectAttemptSchema.safeParse({
+        attemptId: "1",
+        reviewNote: "x".repeat(LIMITS.reviewNote + 1),
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("saveSkillSchema（スキル作成・更新）", () => {
+  it("正常系: 妥当な入力をパースする", () => {
+    const r = saveSkillSchema.parse({
+      name: "Git",
+      category: "ツール",
+      description: "バージョン管理",
+    });
+    expect(r.name).toBe("Git");
+    expect(r.description).toBe("バージョン管理");
+  });
+  it("異常系: スキル名が空だとエラー", () => {
+    expect(saveSkillSchema.safeParse({ name: "  " }).success).toBe(false);
+  });
+  it("境界値: 説明未指定は空文字になる", () => {
+    expect(saveSkillSchema.parse({ name: "Git" }).description).toBe("");
+  });
+});
+
+describe("addDependencySchema（前提関係）", () => {
+  it("正常系: 異なるスキルIDを受け付ける", () => {
+    const r = addDependencySchema.parse({
+      prerequisiteSkillId: "1",
+      unlockedSkillId: "2",
+    });
+    expect(r).toEqual({ prerequisiteSkillId: 1, unlockedSkillId: 2 });
+  });
+  it("異常系: 前提と開放が同一だとエラー", () => {
+    expect(
+      addDependencySchema.safeParse({
+        prerequisiteSkillId: "1",
+        unlockedSkillId: "1",
+      }).success,
+    ).toBe(false);
+  });
+  it("境界値: 未選択（空文字）だとエラー", () => {
+    expect(
+      addDependencySchema.safeParse({
+        prerequisiteSkillId: "",
+        unlockedSkillId: "2",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("saveRateTierSchema（単価帯）", () => {
+  const valid = {
+    name: "ミドル",
+    description: "",
+    estimatedRate: "60",
+    sortOrder: "1",
+    skillIds: ["1"],
+  };
+  it("正常系: 数値へ変換される", () => {
+    const r = saveRateTierSchema.parse(valid);
+    expect(r.estimatedRate).toBe(60);
+    expect(r.sortOrder).toBe(1);
+    expect(r.skillIds).toEqual([1]);
+  });
+  it("異常系: 想定単価が負数だとエラー", () => {
+    expect(
+      saveRateTierSchema.safeParse({ ...valid, estimatedRate: "-5" }).success,
+    ).toBe(false);
+  });
+  it("境界値: 想定単価 0 は許可される", () => {
+    expect(
+      saveRateTierSchema.parse({ ...valid, estimatedRate: "0" }).estimatedRate,
+    ).toBe(0);
+  });
+});
+
+describe("createUserSchema（ユーザー作成）", () => {
+  const valid = {
+    name: "山田太郎",
+    email: "Yamada@Example.com",
+    password: "password123",
+    role: "engineer",
+    teamId: "2",
+  };
+  it("正常系: メールを小文字化し、teamId を数値へ変換する", () => {
+    const r = createUserSchema.parse(valid);
+    expect(r.email).toBe("yamada@example.com");
+    expect(r.teamId).toBe(2);
+    expect(r.role).toBe("engineer");
+  });
+  it("正常系: teamId 空文字は null（未所属）になる", () => {
+    expect(createUserSchema.parse({ ...valid, teamId: "" }).teamId).toBeNull();
+  });
+  it("異常系: メール形式が不正だとエラー", () => {
+    expect(
+      createUserSchema.safeParse({ ...valid, email: "not-an-email" }).success,
+    ).toBe(false);
+  });
+  it("異常系: ロールが列挙外だとエラー", () => {
+    expect(
+      createUserSchema.safeParse({ ...valid, role: "superuser" }).success,
+    ).toBe(false);
+  });
+  it("境界値: パスワードが下限未満だとエラー", () => {
+    expect(
+      createUserSchema.safeParse({
+        ...valid,
+        password: "a".repeat(LIMITS.passwordMin - 1),
+      }).success,
+    ).toBe(false);
+  });
+  it("境界値: 氏名必須欠落（空文字）だとエラー", () => {
+    expect(createUserSchema.safeParse({ ...valid, name: "" }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("updateUserSchema（ユーザー更新）", () => {
+  it("正常系: id・role・teamId を変換する", () => {
+    const r = updateUserSchema.parse({ id: "5", role: "admin", teamId: "" });
+    expect(r).toEqual({ id: 5, role: "admin", teamId: null });
+  });
+  it("異常系: id 欠落（空文字）だとエラー", () => {
+    expect(
+      updateUserSchema.safeParse({ id: "", role: "admin" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("createTeamSchema（チーム作成）", () => {
+  it("正常系: 妥当なチーム名を受け付ける", () => {
+    expect(createTeamSchema.parse({ name: "Alpha" }).name).toBe("Alpha");
+  });
+  it("異常系: 空白のみだとエラー", () => {
+    expect(createTeamSchema.safeParse({ name: "   " }).success).toBe(false);
+  });
+});
+
+describe("questIdSchema（挑戦開始・自己申告）", () => {
+  it("正常系: questId を正の整数へ変換する", () => {
+    expect(questIdSchema.parse({ questId: "12" }).questId).toBe(12);
+  });
+  it("異常系: questId が 0 だとエラー", () => {
+    expect(questIdSchema.safeParse({ questId: "0" }).success).toBe(false);
+  });
+});
+
+describe("submitForApprovalSchema（成果物提出）", () => {
+  it("正常系: 提出物をトリムして受け付ける", () => {
+    const r = submitForApprovalSchema.parse({
+      questId: "1",
+      submission: "  https://example.com  ",
+    });
+    expect(r.submission).toBe("https://example.com");
+  });
+  it("異常系: 提出物が空だとエラー", () => {
+    expect(
+      submitForApprovalSchema.safeParse({ questId: "1", submission: "   " })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("takeTestSchema（テスト解答）", () => {
+  it("正常系: 解答を小文字化・トリムする", () => {
+    expect(
+      takeTestSchema.parse({ questId: "1", answer: "  PASS  " }).answer,
+    ).toBe("pass");
+  });
+  it("境界値: 解答未指定は空文字になる", () => {
+    expect(takeTestSchema.parse({ questId: "1" }).answer).toBe("");
+  });
+});
+
+describe("loginSchema（ログイン）", () => {
+  it("正常系: メールを小文字化する", () => {
+    const r = loginSchema.parse({ email: "ADMIN@x.com", password: "pw" });
+    expect(r.email).toBe("admin@x.com");
+  });
+  it("異常系: パスワード欠落（空文字）だとエラー", () => {
+    expect(
+      loginSchema.safeParse({ email: "a@x.com", password: "" }).success,
+    ).toBe(false);
+  });
+  it("異常系: メール形式不正だとエラー", () => {
+    expect(loginSchema.safeParse({ email: "bad", password: "pw" }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("列挙スキーマ", () => {
+  it("verificationEnum は self/approval/test のみ許可", () => {
+    expect(verificationEnum.safeParse("approval").success).toBe(true);
+    expect(verificationEnum.safeParse("none").success).toBe(false);
+  });
+  it("roleEnum は engineer/admin のみ許可", () => {
+    expect(roleEnum.safeParse("admin").success).toBe(true);
+    expect(roleEnum.safeParse("root").success).toBe(false);
+  });
+});
+
+describe("firstError", () => {
+  it("最初のエラーメッセージを返す", () => {
+    const r = createTeamSchema.safeParse({ name: "" });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(firstError(r.error)).toBe("チーム名は必須です");
+    }
+  });
+});

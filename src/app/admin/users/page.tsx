@@ -9,6 +9,7 @@ import {
   updateUserAction,
 } from "@/app/actions/admin";
 import { PageHeader } from "@/components/ui";
+import { ActionForm } from "@/components/action-form";
 
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
@@ -41,7 +42,7 @@ export default async function AdminUsersPage() {
       <section>
         <h2 className="mb-3 text-base font-semibold">チーム</h2>
         <div className="card mb-3">
-          <form
+          <ActionForm
             action={createTeamAction}
             className="flex flex-wrap items-end gap-3"
           >
@@ -50,7 +51,7 @@ export default async function AdminUsersPage() {
               <input id="team-name" name="name" className="input" placeholder="例: Gamma チーム" required />
             </div>
             <button className="btn-primary">追加</button>
-          </form>
+          </ActionForm>
         </div>
         <div className="flex flex-wrap gap-2">
           {allTeams.map((t) => (
@@ -76,7 +77,7 @@ export default async function AdminUsersPage() {
           <summary className="cursor-pointer text-sm font-medium text-zen-accent">
             ＋ 新しいユーザーを登録
           </summary>
-          <form action={createUserAction} className="mt-4 space-y-3">
+          <ActionForm action={createUserAction} className="mt-4 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="label" htmlFor="user-name">氏名</label>
@@ -110,7 +111,7 @@ export default async function AdminUsersPage() {
               </div>
             </div>
             <button className="btn-primary">登録する</button>
-          </form>
+          </ActionForm>
         </details>
       </section>
 

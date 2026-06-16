@@ -8,6 +8,7 @@ import {
   saveSkillAction,
 } from "@/app/actions/admin";
 import { PageHeader } from "@/components/ui";
+import { ActionForm } from "@/components/action-form";
 
 type SkillRow = typeof skills.$inferSelect;
 
@@ -67,7 +68,7 @@ export default async function AdminSkillsPage() {
       <section>
         <h2 className="mb-3 text-base font-semibold">前提関係（ツリーの枝）</h2>
         <div className="card mb-4">
-          <form
+          <ActionForm
             action={addDependencyAction}
             className="flex flex-wrap items-end gap-3"
           >
@@ -105,7 +106,7 @@ export default async function AdminSkillsPage() {
               </select>
             </div>
             <button className="btn-primary">追加</button>
-          </form>
+          </ActionForm>
         </div>
 
         <div className="card divide-y divide-zen-line p-0">
@@ -145,7 +146,7 @@ export default async function AdminSkillsPage() {
 
 function SkillForm({ skill }: { skill?: SkillRow }) {
   return (
-    <form action={saveSkillAction} className="space-y-3">
+    <ActionForm action={saveSkillAction} className="space-y-3">
       {skill && <input type="hidden" name="id" value={skill.id} />}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -178,6 +179,6 @@ function SkillForm({ skill }: { skill?: SkillRow }) {
         />
       </div>
       <button className="btn-primary">{skill ? "更新" : "追加"}</button>
-    </form>
+    </ActionForm>
   );
 }

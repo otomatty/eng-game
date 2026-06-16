@@ -5,18 +5,21 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { createSession, destroySession, verifyPassword } from "@/lib/auth";
-import { formString } from "@/lib/form";
+import { formString, type ActionResult } from "@/lib/form";
+import { loginSchema } from "@/lib/schemas";
 
 export async function loginAction(
-  _prev: { error?: string } | undefined,
+  _prev: ActionResult | undefined,
   formData: FormData,
-): Promise<{ error?: string }> {
-  const email = formString(formData, "email").trim().toLowerCase();
-  const password = formString(formData, "password");
-
-  if (!email || !password) {
-    return { error: "メールアドレスとパスワードを入力してください。" };
+): Promise<ActionResult> {
+  const parsed = loginSchema.safeParse({
+    email: formString(formData, "email"),
+    password: formString(formData, "password"),
+  });
+  if (!parsed.success) {
+    return { error: "メールアドレスとパスワードを正しく入力してください。" };
   }
+  const { email, password } = parsed.data;
 
   const db = getDb();
   const user = (
