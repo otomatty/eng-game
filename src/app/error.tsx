@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { ErrorView } from "@/components/boundary";
+import { ErrorState } from "@/components/boundaries";
 
 export default function Error({
   error,
@@ -11,15 +11,9 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // 開発時のみコンソールに詳細を出す（本番では内部情報を露出させない）。
-    if (process.env.NODE_ENV === "development") {
-      console.error(error);
-    }
+    // エラー監視サービス（Sentry 等）の導入は別 issue。ここでは最低限ログに残す。
+    console.error(error);
   }, [error]);
 
-  return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-10">
-      <ErrorView error={error} reset={reset} />
-    </div>
-  );
+  return <ErrorState digest={error.digest} onReset={reset} homeHref="/" />;
 }

@@ -1,5 +1,5 @@
-import { LoadingView } from "@/components/boundary";
+import { LoadingState } from "@/components/boundaries";
 
 export default function Loading() {
-  return <LoadingView />;
+  return <LoadingState />;
 }
