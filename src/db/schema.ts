@@ -52,6 +52,19 @@ export const sessions = sqliteTable("sessions", {
   createdAt,
 });
 
+// ログイン試行のレート制限（IP+メール単位の失敗カウンタ・窓・ロック / Issue #5）
+export const loginAttempts = sqliteTable("login_attempts", {
+  // `${ip}|${email}` のキー
+  id: text("id").primaryKey(),
+  // 現在の窓における連続失敗回数
+  failureCount: integer("failure_count").notNull().default(0),
+  // 現在の窓の起点（最初の失敗時刻）
+  firstFailureAt: integer("first_failure_at", { mode: "timestamp" }).notNull(),
+  // ロック解除時刻（ロック中でなければ null）
+  lockedUntil: integer("locked_until", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
 // スキル（名前・カテゴリ）
 export const skills = sqliteTable("skills", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -190,3 +203,4 @@ export type Skill = typeof skills.$inferSelect;
 export type Quest = typeof quests.$inferSelect;
 export type QuestAttempt = typeof questAttempts.$inferSelect;
 export type RateTier = typeof rateTiers.$inferSelect;
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
