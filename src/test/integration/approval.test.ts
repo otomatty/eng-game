@@ -146,7 +146,7 @@ describe("承認: approveAttemptAction", () => {
     await h.login(admin.id);
 
     await approveAttemptAction(attemptForm(a1.id));
-    // 2件目の承認は例外を投げず、重複として無効化される
+    // 2件目の承認は例外を投げず、重複として削除される
     await expect(approveAttemptAction(attemptForm(a2.id))).resolves.toBeUndefined();
 
     expect((await h.getUser(engineer.id))?.totalPoints).toBe(100);
@@ -160,11 +160,12 @@ describe("承認: approveAttemptAction", () => {
           eq(questAttempts.questId, quest.id),
         ),
       );
-    // 完了/承認済みは1件だけ
-    expect(rows.filter((a) => a.status === "approved" || a.status === "completed")).toHaveLength(1);
-    // 重複した2件目は rejected になり、承認待ちキューに残らない
-    const second = rows.find((a) => a.id === a2.id);
-    expect(second?.status).toBe("rejected");
+    // 重複した2件目は削除され、残るのは承認済みの1件だけ。
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(a1.id);
+    expect(rows[0]?.status).toBe("approved");
+    // 最新の挑戦（id 降順の先頭）が approved なので、ユーザーには完了と表示される。
+    expect(rows.find((a) => a.id === a2.id)).toBeUndefined();
   });
 
   it("異常系: submitted でない記録は承認しても状態が変わらない", async () => {

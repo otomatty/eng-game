@@ -215,16 +215,13 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
       .limit(1)
   )[0];
   if (alreadyDone) {
-    // この提出は二重提出の重複。承認すると部分ユニークインデックスに違反するため、
-    // submitted のままなら rejected（重複により無効）にして承認待ちキューから除く。
+    // この提出は二重提出の重複。既に完了済みで承認すると部分ユニークインデックスに違反する。
+    // rejected にして残すと、id が大きい重複が「最新の挑戦」となりユーザーには未完了（差し戻し）
+    // と見えて無限に再提出できてしまう（クエスト詳細は最新挑戦を id 降順で1件取得するため）。
+    // よって重複行は削除し、最新の挑戦を completed/approved 側に保つ。
     if (attempt.status === "submitted") {
       await db
-        .update(questAttempts)
-        .set({
-          status: "rejected",
-          approverId: admin.id,
-          reviewNote: "重複提出のため無効化されました（既に完了済み）",
-        })
+        .delete(questAttempts)
         .where(
           and(
             eq(questAttempts.id, attemptId),
