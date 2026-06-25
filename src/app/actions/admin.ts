@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   questAttempts,
@@ -203,6 +203,10 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
   // 承認の確定（claim）を原子的に行う。`status = 'submitted'` を条件にした UPDATE で
   // 先勝ちの 1 件だけが 1 行更新でき、同じ提出を同時に承認しても遅れた側は 0 行更新となる。
   // この claim に「勝った」承認だけが報酬を付与するため、二重承認でも二重付与しない。
+  //
+  // さらに「同一 user×quest に既に completed/approved が存在しない」ことを NOT EXISTS で条件化する。
+  // 二重提出で submitted が複数生じた場合（submitted は部分ユニークインデックスの対象外）、
+  // 1 件目の承認後に 2 件目を承認しようとすると索引違反で例外になるのを防ぎ、0 行更新の no-op にする。
   const claimed = await db
     .update(questAttempts)
     .set({ status: "approved", approverId: admin.id, approvedAt: new Date() })
@@ -210,6 +214,7 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
       and(
         eq(questAttempts.id, attemptId),
         eq(questAttempts.status, "submitted"),
+        sql`not exists (select 1 from ${questAttempts} qa2 where qa2.user_id = ${attempt.userId} and qa2.quest_id = ${attempt.questId} and qa2.status in ('completed', 'approved'))`,
       ),
     )
     .returning({ id: questAttempts.id });

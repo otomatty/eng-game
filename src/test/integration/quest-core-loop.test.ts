@@ -372,6 +372,24 @@ describe("コアループ: 同時実行・原子性（claim）", () => {
     expect((await h.getUser(user.id))?.totalPoints).toBe(100);
   });
 
+  it("境界: claim 不可な既存記録（submitted）があるときは新規 completed 行を作らず報酬も付かない", async () => {
+    const user = await h.createUser();
+    await h.login(user.id);
+    const quest = await h.createQuest({ verification: "self", rewardPoints: 100 });
+    // self フローでは通常生じないが、claim 不可状態の既存記録を用意して防御的挙動を固定する
+    await h
+      .db()
+      .insert(questAttempts)
+      .values({ userId: user.id, questId: quest.id, status: "submitted" });
+
+    await selfCompleteAction(questForm(quest.id));
+
+    const rows = await attemptsFor(user.id, quest.id);
+    expect(rows).toHaveLength(1); // 新しい completed 行を作らない
+    expect(rows[0]?.status).toBe("submitted");
+    expect((await h.getUser(user.id))?.totalPoints).toBe(0);
+  });
+
   it("migration 0004: 既存の完了重複を解消してから部分ユニークインデックスを作成できる", async () => {
     const db = h.db();
     const user = await h.createUser();

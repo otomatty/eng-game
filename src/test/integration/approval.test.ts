@@ -128,6 +128,44 @@ describe("承認: approveAttemptAction", () => {
     expect(updated?.status).toBe("approved");
   });
 
+  it("境界: 二重提出で submitted が2件あるとき、2件目の承認は索引違反を投げず二重付与もしない", async () => {
+    const engineer = await h.createUser({ role: "engineer" });
+    const quest = await h.createQuest({ verification: "approval", rewardPoints: 100 });
+    // 二重サブミットを再現（submitted は部分ユニークインデックス対象外なので2件作れる）
+    const inserted = await h
+      .db()
+      .insert(questAttempts)
+      .values([
+        { userId: engineer.id, questId: quest.id, status: "submitted", submittedAt: new Date() },
+        { userId: engineer.id, questId: quest.id, status: "submitted", submittedAt: new Date() },
+      ])
+      .returning();
+    const [a1, a2] = inserted;
+    if (!a1 || !a2) throw new Error("二重提出のセットアップに失敗");
+    const admin = await h.createUser({ role: "admin" });
+    await h.login(admin.id);
+
+    await approveAttemptAction(attemptForm(a1.id));
+    // 2件目の承認は例外を投げず no-op になる
+    await expect(approveAttemptAction(attemptForm(a2.id))).resolves.toBeUndefined();
+
+    expect((await h.getUser(engineer.id))?.totalPoints).toBe(100);
+    // 完了/承認済みは1件だけ
+    const done = (
+      await h
+        .db()
+        .select()
+        .from(questAttempts)
+        .where(
+          and(
+            eq(questAttempts.userId, engineer.id),
+            eq(questAttempts.questId, quest.id),
+          ),
+        )
+    ).filter((a) => a.status === "approved" || a.status === "completed");
+    expect(done).toHaveLength(1);
+  });
+
   it("異常系: submitted でない記録は承認しても状態が変わらない", async () => {
     const engineer = await h.createUser({ role: "engineer" });
     const quest = await h.createQuest({ verification: "approval", rewardPoints: 100 });

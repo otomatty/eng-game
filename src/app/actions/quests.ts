@@ -98,7 +98,10 @@ async function claimCompletion(
   claimableStatuses: readonly ClaimableStatus[],
 ): Promise<boolean> {
   const db = getDb();
-  if (existing && claimableStatuses.some((s) => s === existing.status)) {
+  if (existing) {
+    // 既存記録が claim 可能（completed へ遷移できる）状態でなければ、新規 completed 行は
+    // 作らない（claim 不可の状態から並行して完了行を作り報酬対象にするのを防ぐ）。
+    if (!claimableStatuses.some((s) => s === existing.status)) return false;
     const updated = await db
       .update(questAttempts)
       .set({ status: "completed", approvedAt: new Date() })
