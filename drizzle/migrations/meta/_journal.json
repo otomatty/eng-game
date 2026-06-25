@@ -15,6 +15,13 @@
       "when": 1782345841632,
       "tag": "0001_chemical_penance",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782358751995,
+      "tag": "0002_material_quicksilver",
+      "breakpoints": true
     }
   ]
 }

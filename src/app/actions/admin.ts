@@ -5,6 +5,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   questAttempts,
+  questQuestionChoices,
+  questQuestions,
   questSkills,
   quests,
   rateTierSkills,
@@ -14,6 +16,7 @@ import {
   teams,
   users,
 } from "@/db/schema";
+import { parseChoiceLines } from "@/lib/domain-logic";
 import { requireAdmin } from "@/lib/guards";
 import { completeQuestForUser, recomputeEstimatedRate } from "@/lib/domain";
 import { hashPassword, invalidateUserSessions } from "@/lib/auth";
@@ -28,6 +31,7 @@ import {
   idOnlySchema,
   rejectAttemptSchema,
   saveQuestSchema,
+  saveQuestionSchema,
   saveRateTierSchema,
   saveSkillSchema,
   toggleQuestPublishSchema,
@@ -48,6 +52,7 @@ export async function saveQuestAction(
     category: formString(fd, "category"),
     rewardPoints: formString(fd, "rewardPoints"),
     verification: formString(fd, "verification", "self"),
+    passThreshold: formString(fd, "passThreshold"),
     isPublished: fd.get("isPublished"),
     skillIds: formStrings(fd, "skillIds"),
   });
@@ -97,6 +102,86 @@ export async function toggleQuestPublishAction(fd: FormData): Promise<void> {
     .update(quests)
     .set({ isPublished: parsed.data.publish })
     .where(eq(quests.id, parsed.data.id));
+  revalidatePath("/admin/quests");
+}
+
+// ============ テスト型クエストの設問 ============
+
+/**
+ * テスト型クエストへ設問を追加する（Issue #7）。
+ * - single（選択式）: 「1 行 1 つ・行頭 * が正解」のテキストを選択肢へ展開する。
+ * - text（完全一致）: 正解文字列を設問行へ保存する。
+ * 正解情報は `quest_questions` / `quest_question_choices` にのみ保持し、UI へは露出しない。
+ */
+export async function saveQuestionAction(
+  _prev: ActionResult,
+  fd: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+  const parsed = saveQuestionSchema.safeParse({
+    questId: formString(fd, "questId"),
+    prompt: formString(fd, "prompt"),
+    kind: formString(fd, "kind", "single"),
+    correctText: formString(fd, "correctText"),
+    choicesRaw: formString(fd, "choicesRaw"),
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+  const { questId, prompt, kind, correctText, choicesRaw } = parsed.data;
+
+  const db = getDb();
+  // 対象クエストがテスト型であることを確認（種別不一致のクエストへ設問を付けない）。
+  const quest = (
+    await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
+  )[0];
+  if (!quest) return { error: "クエストが見つかりません" };
+  if (quest.verification !== "test")
+    return { error: "テスト型クエストにのみ設問を追加できます" };
+
+  // 末尾に追加する並び順
+  const siblings = await db
+    .select({ sortOrder: questQuestions.sortOrder })
+    .from(questQuestions)
+    .where(eq(questQuestions.questId, questId));
+  const nextOrder =
+    siblings.reduce((max, s) => Math.max(max, s.sortOrder), 0) + 1;
+
+  const inserted = (
+    await db
+      .insert(questQuestions)
+      .values({
+        questId,
+        prompt,
+        kind,
+        correctText: kind === "text" ? correctText : "",
+        sortOrder: nextOrder,
+      })
+      .returning()
+  )[0];
+  if (!inserted) return { error: "設問の作成に失敗しました" };
+
+  if (kind === "single") {
+    const choices = parseChoiceLines(choicesRaw);
+    await db.insert(questQuestionChoices).values(
+      choices.map((c, i) => ({
+        questionId: inserted.id,
+        label: c.label,
+        isCorrect: c.isCorrect,
+        sortOrder: i + 1,
+      })),
+    );
+  }
+
+  revalidatePath("/admin/quests");
+  return {};
+}
+
+/** 設問を削除する（選択肢は ON DELETE CASCADE で連動削除）。 */
+export async function deleteQuestionAction(fd: FormData): Promise<void> {
+  await requireAdmin();
+  const parsed = idOnlySchema.safeParse({ id: formString(fd, "id") });
+  if (!parsed.success) return;
+  const db = getDb();
+  await db.delete(questQuestions).where(eq(questQuestions.id, parsed.data.id));
   revalidatePath("/admin/quests");
 }
 

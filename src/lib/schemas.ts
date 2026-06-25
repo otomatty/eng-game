@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseChoiceLines } from "./domain-logic";
 
 /**
  * サーバーアクションが受け取る外部入力（フォーム）の Zod スキーマ。
@@ -25,6 +26,10 @@ export const LIMITS = {
   rewardPoints: 1_000_000,
   estimatedRate: 100_000,
   sortOrder: 100_000,
+  // テスト型クエストの設問（Issue #7）
+  questionPrompt: 500,
+  choicesRaw: 2000,
+  maxChoices: 10,
 } as const;
 
 // ---- 再利用する部品スキーマ ----
@@ -118,6 +123,15 @@ export const questStatusEnum = z.enum(
   ["in_progress", "submitted", "approved", "completed", "rejected"],
   { message: "状態が不正です" },
 );
+export const questionKindEnum = z.enum(["single", "text"], {
+  message: "採点方式が不正です",
+});
+
+/** テスト型クエストの合格基準（正答率 %、1..100）。未指定・空なら 100（全問正解）。 */
+const passThresholdSchema = z.preprocess(
+  (v) => (v === "" || v == null ? 100 : v),
+  intInRange(1, 100, "合格基準（正答率）"),
+);
 
 // ============ 管理: クエスト ============
 
@@ -128,9 +142,57 @@ export const saveQuestSchema = z.object({
   category: categorySchema,
   rewardPoints: intInRange(0, LIMITS.rewardPoints, "獲得ポイント"),
   verification: verificationEnum.default("self"),
+  passThreshold: passThresholdSchema,
   isPublished: checkbox(),
   skillIds,
 });
+
+/**
+ * テスト型クエストの設問保存。
+ * - single（選択式）: 選択肢を「1 行 1 つ・行頭 * が正解」で入力（>= 2 個 / 正解 >= 1 個）。
+ * - text（完全一致）: 正解文字列を必須入力。
+ */
+export const saveQuestionSchema = z
+  .object({
+    questId: requiredId("クエスト"),
+    prompt: requiredText("設問", LIMITS.questionPrompt),
+    kind: questionKindEnum.default("single"),
+    correctText: optionalText("正解", LIMITS.answer),
+    choicesRaw: optionalText("選択肢", LIMITS.choicesRaw),
+  })
+  .superRefine((data, ctx) => {
+    if (data.kind === "text") {
+      if (data.correctText.trim() === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "完全一致の正解を入力してください",
+          path: ["correctText"],
+        });
+      }
+      return;
+    }
+    // single
+    const choices = parseChoiceLines(data.choicesRaw);
+    if (choices.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "選択肢は 2 つ以上入力してください（1 行 1 つ）",
+        path: ["choicesRaw"],
+      });
+    } else if (choices.length > LIMITS.maxChoices) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `選択肢は最大 ${LIMITS.maxChoices} 個までです`,
+        path: ["choicesRaw"],
+      });
+    } else if (!choices.some((c) => c.isCorrect)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "正解の選択肢（行頭に *）を 1 つ以上指定してください",
+        path: ["choicesRaw"],
+      });
+    }
+  });
 
 export const toggleQuestPublishSchema = z.object({
   id: requiredId("クエスト"),
@@ -238,15 +300,22 @@ export const submitForApprovalSchema = z.object({
     .max(LIMITS.submission, `提出物は${LIMITS.submission}文字以内で入力してください`),
 });
 
+/**
+ * テスト型クエストの解答提出。
+ * 設問は管理画面で設定された `quest_questions` から取得するため、ここでは
+ * クエスト ID のみを検証する。各設問の提出値（選択肢 id / 完全一致文字列）は
+ * サーバー側で設問を突き合わせて読み取り、`testAnswerValueSchema` で長さを検証する。
+ */
 export const takeTestSchema = z.object({
   questId: requiredId("クエスト"),
-  answer: z
-    .string()
-    .trim()
-    .max(LIMITS.answer, `解答は${LIMITS.answer}文字以内で入力してください`)
-    .transform((v) => v.toLowerCase())
-    .default(""),
 });
+
+/** 1 設問あたりの提出値（長さ上限のみ。空文字は不正解として扱う）。 */
+export const testAnswerValueSchema = z
+  .string()
+  .trim()
+  .max(LIMITS.answer, `解答は${LIMITS.answer}文字以内で入力してください`)
+  .default("");
 
 // ============ 認証 ============
 

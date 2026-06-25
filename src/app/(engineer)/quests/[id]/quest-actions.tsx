@@ -9,12 +9,27 @@ import {
   takeTestAction,
 } from "@/app/actions/quests";
 
+/** 表示用の選択肢（正解情報は含めない）。 */
+export interface DisplayChoice {
+  id: number;
+  label: string;
+}
+
+/** 表示用の設問（正解情報は含めない / Issue #7）。 */
+export interface DisplayQuestion {
+  id: number;
+  prompt: string;
+  kind: "single" | "text";
+  choices: DisplayChoice[];
+}
+
 interface Props {
   questId: number;
   verification: "self" | "approval" | "test";
   status?: string;
   reviewNote?: string;
   submission?: string;
+  questions?: DisplayQuestion[];
 }
 
 export function QuestActions({
@@ -23,12 +38,21 @@ export function QuestActions({
   status,
   reviewNote,
   submission,
+  questions = [],
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [text, setText] = useState(submission ?? "");
-  const [answer, setAnswer] = useState("");
+  // 設問 id -> 提出値（single は選択肢 id 文字列、text は入力文字列）
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+
+  const setAnswer = (questionId: number, value: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+  const allAnswered =
+    questions.length > 0 &&
+    questions.every((q) => (answers[q.id] ?? "").trim() !== "");
 
   const completed = status === "completed" || status === "approved";
   const submitted = status === "submitted";
@@ -109,22 +133,56 @@ export function QuestActions({
         </div>
       )}
 
-      {verification === "test" && (
-        <div className="space-y-2">
-          <label className="label" htmlFor="test-answer">テストの解答</label>
-          <input
-            id="test-answer"
-            className="input"
-            placeholder="解答を入力（デモ: pass で合格）"
-            value={answer}
-            onChange={(e) => { setAnswer(e.target.value); }}
-          />
+      {verification === "test" && questions.length === 0 && (
+        <div className="rounded-xl bg-zen-bg px-4 py-3 text-sm text-zen-sub">
+          このテストにはまだ設問が設定されていません。管理者にお問い合わせください。
+        </div>
+      )}
+
+      {verification === "test" && questions.length > 0 && (
+        <div className="space-y-5">
+          {questions.map((q, index) => (
+            <fieldset key={q.id} className="space-y-2">
+              <legend className="label">
+                問{index + 1}. {q.prompt}
+              </legend>
+              {q.kind === "single" ? (
+                <div className="space-y-1.5">
+                  {q.choices.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-zen-line bg-white px-3 py-2 text-sm has-[:checked]:border-zen-accent has-[:checked]:bg-zen-accentSoft"
+                    >
+                      <input
+                        type="radio"
+                        name={`q_${q.id}`}
+                        value={c.id}
+                        checked={answers[q.id] === String(c.id)}
+                        onChange={() => { setAnswer(q.id, String(c.id)); }}
+                        className="accent-zen-accent"
+                      />
+                      {c.label}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <input
+                  className="input"
+                  placeholder="解答を入力"
+                  value={answers[q.id] ?? ""}
+                  onChange={(e) => { setAnswer(q.id, e.target.value); }}
+                />
+              )}
+            </fieldset>
+          ))}
           <button
             className="btn-primary w-full"
-            disabled={pending || !answer.trim()}
+            disabled={pending || !allAnswered}
             onClick={() => {
               const f = fd();
-              f.set("answer", answer);
+              for (const q of questions) {
+                f.set(`q_${q.id}`, answers[q.id] ?? "");
+              }
               run(() => takeTestAction(f));
             }}
           >

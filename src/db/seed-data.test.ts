@@ -6,6 +6,7 @@ import {
   TEAMS,
   SKILL_DEFS,
   QUEST_DEFS,
+  QUESTION_DEFS,
   ENGINEER_DEFS,
   TIER_DEFS,
 } from "./seed-data";
@@ -118,5 +119,55 @@ describe("buildSeedSql: 冪等な投入 SQL の生成", () => {
     // 文字列リテラルは必ず偶数個のシングルクォートで閉じられる
     const quotes = (sql.match(/'/g) ?? []).length;
     expect(quotes % 2).toBe(0);
+  });
+
+  it("テスト型クエストの設問・選択肢を INSERT する（Issue #7）", () => {
+    expect((sql.match(/INSERT INTO `quest_questions`/g) ?? []).length).toBe(
+      QUESTION_DEFS.length,
+    );
+    const choiceCount = QUESTION_DEFS.reduce(
+      (sum, q) => sum + (q.kind === "single" ? (q.choices?.length ?? 0) : 0),
+      0,
+    );
+    expect(
+      (sql.match(/INSERT INTO `quest_question_choices`/g) ?? []).length,
+    ).toBe(choiceCount);
+  });
+
+  it("冪等性のため設問・選択肢も DELETE 対象に含む", () => {
+    expect(sql).toContain("DELETE FROM `quest_questions`;");
+    expect(sql).toContain("DELETE FROM `quest_question_choices`;");
+  });
+});
+
+describe("QUESTION_DEFS: 設問データの健全性", () => {
+  it("各設問は既知のクエストに紐づく", () => {
+    const titles = new Set(QUEST_DEFS.map((q) => q.title));
+    for (const q of QUESTION_DEFS) {
+      expect(titles.has(q.questTitle)).toBe(true);
+    }
+  });
+
+  it("選択式は2つ以上の選択肢と正解1つ以上を持つ", () => {
+    for (const q of QUESTION_DEFS.filter((q) => q.kind === "single")) {
+      const choices = q.choices ?? [];
+      expect(choices.length).toBeGreaterThanOrEqual(2);
+      expect(choices.some((c) => c.correct)).toBe(true);
+    }
+  });
+
+  it("完全一致は空でない正解文字列を持つ", () => {
+    for (const q of QUESTION_DEFS.filter((q) => q.kind === "text")) {
+      expect((q.correctText ?? "").trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("設問が紐づくクエストはすべてテスト型である", () => {
+    const verificationByTitle = new Map(
+      QUEST_DEFS.map((q) => [q.title, q.verification]),
+    );
+    for (const q of QUESTION_DEFS) {
+      expect(verificationByTitle.get(q.questTitle)).toBe("test");
+    }
   });
 });

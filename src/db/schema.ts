@@ -126,10 +126,42 @@ export const quests = sqliteTable("quests", {
   })
     .notNull()
     .default("self"),
+  // テスト型クエストの合格基準（正答率 %、1..100）。設問数に対する必要正答割合。
+  // 例: 100 = 全問正解で合格 / 60 = 6割以上で合格。
+  passThreshold: integer("pass_threshold").notNull().default(100),
   isPublished: integer("is_published", { mode: "boolean" })
     .notNull()
     .default(false),
   createdAt,
+});
+
+// テスト型クエストの設問（選択式 single / 完全一致 text）
+export const questQuestions = sqliteTable("quest_questions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  questId: integer("quest_id")
+    .notNull()
+    .references(() => quests.id, { onDelete: "cascade" }),
+  // 設問文
+  prompt: text("prompt").notNull(),
+  // 採点方式: single=選択式（正解の選択肢を選ぶ） / text=完全一致（正解文字列）
+  kind: text("kind", { enum: ["single", "text"] })
+    .notNull()
+    .default("single"),
+  // kind=text の正解文字列（大文字小文字・前後空白を無視して比較）。single では未使用。
+  correctText: text("correct_text").notNull().default(""),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt,
+});
+
+// 選択式設問の選択肢（正解フラグつき）。正解は UI に露出させない。
+export const questQuestionChoices = sqliteTable("quest_question_choices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  questionId: integer("question_id")
+    .notNull()
+    .references(() => questQuestions.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  isCorrect: integer("is_correct", { mode: "boolean" }).notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 // クエストとクリアで習得するスキルの対応（N–N）
@@ -202,5 +234,7 @@ export type Team = typeof teams.$inferSelect;
 export type Skill = typeof skills.$inferSelect;
 export type Quest = typeof quests.$inferSelect;
 export type QuestAttempt = typeof questAttempts.$inferSelect;
+export type QuestQuestion = typeof questQuestions.$inferSelect;
+export type QuestQuestionChoice = typeof questQuestionChoices.$inferSelect;
 export type RateTier = typeof rateTiers.$inferSelect;
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
