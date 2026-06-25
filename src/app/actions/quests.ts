@@ -237,8 +237,11 @@ export async function takeTestAction(
 
   const grading = gradeTest(questions, submission, quest.passThreshold);
   if (!grading.passed) {
+    // 不合格時に「今回の正答数」を返すと、選択肢を1つずつ変えてスコア差分から
+    // 正解を逆算できる（オラクル攻撃）。再挑戦可能なテストでは合否のみを返し、
+    // 設問数・合格基準（毎回不変で逆算に使えない静的情報）だけを案内する。
     return {
-      error: `不合格です（正解 ${grading.correct} / ${grading.total} 問・合格には ${grading.requiredCorrect} 問必要）。もう一度挑戦してください。`,
+      error: `不合格です。全${grading.total}問中 ${grading.requiredCorrect} 問以上の正解で合格です。もう一度挑戦してください。`,
     };
   }
 
