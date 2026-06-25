@@ -16,10 +16,11 @@ import {
 } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import { completeQuestForUser, recomputeEstimatedRate } from "@/lib/domain";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, invalidateUserSessions } from "@/lib/auth";
 import { formString, formStrings, type ActionResult } from "@/lib/form";
 import {
   addDependencySchema,
+  adminResetPasswordSchema,
   approveAttemptSchema,
   createTeamSchema,
   createUserSchema,
@@ -330,6 +331,42 @@ export async function updateUserAction(fd: FormData): Promise<void> {
     .set({ role: parsed.data.role, teamId: parsed.data.teamId })
     .where(eq(users.id, parsed.data.id));
   revalidatePath("/admin/users");
+}
+
+/**
+ * 管理者によるパスワードリセット。
+ * 対象ユーザーへ新パスワードを再設定し、当該ユーザーの既存セッションを失効させる
+ * （リセット後は本人が新パスワードで再ログインする想定）。
+ */
+export async function adminResetPasswordAction(
+  _prev: ActionResult,
+  fd: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+  const parsed = adminResetPasswordSchema.safeParse({
+    id: formString(fd, "id"),
+    newPassword: formString(fd, "newPassword"),
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const db = getDb();
+  const target = (
+    await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, parsed.data.id))
+      .limit(1)
+  )[0];
+  if (!target) return { error: "対象のユーザーが見つかりません。" };
+
+  await db
+    .update(users)
+    .set({ passwordHash: await hashPassword(parsed.data.newPassword) })
+    .where(eq(users.id, target.id));
+  // 対象ユーザーの既存セッションを失効（漏洩時の即時遮断・パスワード再設定の整合）
+  await invalidateUserSessions(target.id);
+  revalidatePath("/admin/users");
+  return { success: "パスワードをリセットしました。" };
 }
 
 export async function deleteUserAction(fd: FormData): Promise<void> {

@@ -29,6 +29,11 @@ export const LIMITS = {
 
 // ---- 再利用する部品スキーマ ----
 
+/** 文字列の UTF-8 バイト長（bcrypt の 72 バイト上限チェック等に用いる）。 */
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
 /** 必須テキスト（前後空白をトリムし、1..max 文字） */
 function requiredText(label: string, max: number) {
   return z
@@ -175,17 +180,37 @@ export const saveRateTierSchema = z.object({
   skillIds,
 });
 
+/**
+ * パスワードポリシー（最小長・最大長）。
+ * 新規作成・変更・リセットで共通利用する（Issue #6 / ポリシーの一元化）。
+ *
+ * 上限は bcrypt の入力上限（72 バイト）に合わせて**バイト長**で検証する。
+ * `String.length` は UTF-16 コード単位を数えるため、日本語など多バイト文字では
+ * 文字数上限だけでは 72 バイトを超え得る。72 バイトを超えた分は bcryptjs が
+ * 切り捨てるため、「旧パスワードと異なる新パスワード」のはずが切り捨て後は
+ * 同一になり、旧パスワードで認証できてしまう。これを防ぐためバイト長で弾く。
+ */
+const newPasswordSchema = z
+  .string()
+  .min(LIMITS.passwordMin, `パスワードは${LIMITS.passwordMin}文字以上で入力してください`)
+  .refine((v) => utf8ByteLength(v) <= LIMITS.passwordMax, {
+    message: `パスワードは${LIMITS.passwordMax}バイト以内（日本語などは1文字あたり数バイト）で入力してください`,
+  });
+
 // ============ 管理: ユーザー & チーム ============
 
 export const createUserSchema = z.object({
   name: requiredText("氏名", LIMITS.name),
   email: emailSchema,
-  password: z
-    .string()
-    .min(LIMITS.passwordMin, `パスワードは${LIMITS.passwordMin}文字以上で入力してください`)
-    .max(LIMITS.passwordMax, `パスワードは${LIMITS.passwordMax}文字以内で入力してください`),
+  password: newPasswordSchema,
   role: roleEnum.default("engineer"),
   teamId: optionalTeamId,
+});
+
+/** 管理者によるパスワードリセット（対象ユーザーへ新パスワードを再設定） */
+export const adminResetPasswordSchema = z.object({
+  id: requiredId("ユーザー"),
+  newPassword: newPasswordSchema,
 });
 
 export const updateUserSchema = z.object({
@@ -232,6 +257,31 @@ export const loginSchema = z.object({
     .min(1, "パスワードを入力してください")
     .max(LIMITS.passwordMax, `パスワードは${LIMITS.passwordMax}文字以内で入力してください`),
 });
+
+/**
+ * ログインユーザー自身によるパスワード変更。
+ * - 現在のパスワード確認（空でないこと。一致確認はサーバー側で bcrypt 照合）。
+ * - 新パスワードはポリシー（最小長・最大長）を満たすこと。
+ * - 確認用パスワードと一致すること。
+ * - 現在のパスワードと異なること（同一PWへの無意味な変更を防ぐ）。
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, "現在のパスワードを入力してください")
+      .max(LIMITS.passwordMax, `パスワードは${LIMITS.passwordMax}文字以内で入力してください`),
+    newPassword: newPasswordSchema,
+    confirmPassword: z.string().min(1, "確認用パスワードを入力してください"),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, {
+    message: "新しいパスワードと確認用パスワードが一致しません",
+    path: ["confirmPassword"],
+  })
+  .refine((d) => d.newPassword !== d.currentPassword, {
+    message: "現在のパスワードと異なる新しいパスワードを設定してください",
+    path: ["newPassword"],
+  });
 
 /**
  * `safeParse` の失敗結果から、ユーザー向けの最初のエラーメッセージを取り出す。

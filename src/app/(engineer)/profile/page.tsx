@@ -10,6 +10,8 @@ import {
 import { requireUser } from "@/lib/guards";
 import { getUserRank } from "@/lib/queries";
 import { PageHeader, StatCard, StatusBadge } from "@/components/ui";
+import { ActionForm } from "@/components/action-form";
+import { changePasswordAction } from "@/app/actions/auth";
 
 export default async function ProfilePage() {
   const user = await requireUser();
@@ -81,6 +83,66 @@ export default async function ProfilePage() {
           unit="pt"
         />
         <StatCard label="順位" value={rank ?? "—"} unit={rank ? "位" : ""} />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-base font-semibold">パスワード変更</h2>
+        <details className="card">
+          <summary className="cursor-pointer text-sm font-medium text-zen-accent">
+            🔒 パスワードを変更する
+          </summary>
+          <ActionForm
+            action={changePasswordAction}
+            className="mt-4 max-w-md space-y-3"
+          >
+            <div>
+              <label className="label" htmlFor="current-password">
+                現在のパスワード
+              </label>
+              <input
+                id="current-password"
+                name="currentPassword"
+                type="password"
+                autoComplete="current-password"
+                className="input"
+                required
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="new-password">
+                新しいパスワード
+              </label>
+              <input
+                id="new-password"
+                name="newPassword"
+                type="password"
+                autoComplete="new-password"
+                className="input"
+                minLength={8}
+                required
+              />
+              <p className="mt-1 text-xs text-zen-sub">8文字以上で入力してください。</p>
+            </div>
+            <div>
+              <label className="label" htmlFor="confirm-password">
+                新しいパスワード（確認）
+              </label>
+              <input
+                id="confirm-password"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                className="input"
+                minLength={8}
+                required
+              />
+            </div>
+            <p className="text-xs text-zen-sub">
+              変更すると、現在ログイン中の他の端末はすべてログアウトされます。
+            </p>
+            <button className="btn-primary">パスワードを変更する</button>
+          </ActionForm>
+        </details>
       </section>
 
       <section>

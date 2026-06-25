@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   LIMITS,
   addDependencySchema,
+  adminResetPasswordSchema,
+  changePasswordSchema,
   createTeamSchema,
   createUserSchema,
   firstError,
@@ -359,6 +361,126 @@ describe("loginSchema（ログイン）", () => {
     expect(loginSchema.safeParse({ email: "bad", password: "pw" }).success).toBe(
       false,
     );
+  });
+});
+
+describe("changePasswordSchema（本人によるパスワード変更）", () => {
+  const valid = {
+    currentPassword: "oldpassword",
+    newPassword: "newpassword1",
+    confirmPassword: "newpassword1",
+  };
+  it("正常系: 妥当な入力をそのまま受け付ける", () => {
+    const r = changePasswordSchema.parse(valid);
+    expect(r.currentPassword).toBe("oldpassword");
+    expect(r.newPassword).toBe("newpassword1");
+  });
+  it("境界値: 新パスワードが最小長ちょうどなら受け付ける", () => {
+    const pw = "a".repeat(LIMITS.passwordMin);
+    expect(
+      changePasswordSchema.safeParse({
+        currentPassword: "oldpassword",
+        newPassword: pw,
+        confirmPassword: pw,
+      }).success,
+    ).toBe(true);
+  });
+  it("異常系: 新パスワードがポリシー（最小長）未満だと拒否", () => {
+    const pw = "a".repeat(LIMITS.passwordMin - 1);
+    expect(
+      changePasswordSchema.safeParse({
+        currentPassword: "oldpassword",
+        newPassword: pw,
+        confirmPassword: pw,
+      }).success,
+    ).toBe(false);
+  });
+  it("異常系: 確認用パスワードが不一致だと拒否", () => {
+    expect(
+      changePasswordSchema.safeParse({
+        ...valid,
+        confirmPassword: "different1",
+      }).success,
+    ).toBe(false);
+  });
+  it("境界値: 現在のパスワードと同一（同一PWへの変更）だと拒否", () => {
+    const same = "samepassword";
+    const r = changePasswordSchema.safeParse({
+      currentPassword: same,
+      newPassword: same,
+      confirmPassword: same,
+    });
+    expect(r.success).toBe(false);
+  });
+  it("異常系: 現在のパスワード未入力（空文字）だと拒否", () => {
+    expect(
+      changePasswordSchema.safeParse({ ...valid, currentPassword: "" }).success,
+    ).toBe(false);
+  });
+  it("境界値: 新パスワードが72バイトちょうど（全角24文字）なら許可", () => {
+    // "あ" は UTF-8 で3バイト。24文字 = 72バイト（bcrypt 上限ちょうど）。
+    const pw = "あ".repeat(24);
+    expect(
+      changePasswordSchema.safeParse({
+        currentPassword: "oldpassword",
+        newPassword: pw,
+        confirmPassword: pw,
+      }).success,
+    ).toBe(true);
+  });
+  it("異常系: 新パスワードが72バイト超（全角25文字=75バイト）だと拒否", () => {
+    // bcrypt が72バイトで切り捨てるため、バイト長で弾く（文字数ではなく）。
+    const pw = "あ".repeat(25);
+    expect(
+      changePasswordSchema.safeParse({
+        currentPassword: "oldpassword",
+        newPassword: pw,
+        confirmPassword: pw,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("adminResetPasswordSchema（管理者によるパスワードリセット）", () => {
+  it("正常系: id を数値へ変換し、新パスワードを受け付ける", () => {
+    const r = adminResetPasswordSchema.parse({
+      id: "7",
+      newPassword: "resetpassword1",
+    });
+    expect(r.id).toBe(7);
+    expect(r.newPassword).toBe("resetpassword1");
+  });
+  it("境界値: 新パスワードが最小長ちょうどなら受け付ける", () => {
+    expect(
+      adminResetPasswordSchema.safeParse({
+        id: "1",
+        newPassword: "a".repeat(LIMITS.passwordMin),
+      }).success,
+    ).toBe(true);
+  });
+  it("異常系: 新パスワードが最小長未満だと拒否", () => {
+    expect(
+      adminResetPasswordSchema.safeParse({
+        id: "1",
+        newPassword: "a".repeat(LIMITS.passwordMin - 1),
+      }).success,
+    ).toBe(false);
+  });
+  it("異常系: id 欠落（空文字）だと拒否", () => {
+    expect(
+      adminResetPasswordSchema.safeParse({
+        id: "",
+        newPassword: "resetpassword1",
+      }).success,
+    ).toBe(false);
+  });
+  it("異常系: 新パスワードが72バイト超（全角25文字）だと拒否", () => {
+    expect(
+      adminResetPasswordSchema.safeParse({
+        id: "1",
+        newPassword: "あ".repeat(25),
+      }).success,
+    ).toBe(false);
   });
 });
 

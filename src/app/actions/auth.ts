@@ -4,7 +4,14 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
-import { createSession, destroySession, verifyPassword } from "@/lib/auth";
+import {
+  createSession,
+  destroySession,
+  hashPassword,
+  invalidateUserSessions,
+  verifyPassword,
+} from "@/lib/auth";
+import { requireUser } from "@/lib/guards";
 import { formString, type ActionResult } from "@/lib/form";
 import {
   checkLoginRateLimit,
@@ -12,7 +19,7 @@ import {
   recordLoginFailure,
   resetLoginRateLimit,
 } from "@/lib/login-rate-limit";
-import { loginSchema } from "@/lib/schemas";
+import { changePasswordSchema, firstError, loginSchema } from "@/lib/schemas";
 
 export async function loginAction(
   _prev: ActionResult | undefined,
@@ -54,4 +61,51 @@ export async function loginAction(
 export async function logoutAction(): Promise<void> {
   await destroySession();
   redirect("/login");
+}
+
+/**
+ * ログインユーザー自身によるパスワード変更。
+ *
+ * - 現行パスワードを bcrypt で照合し、一致しなければ拒否する。
+ * - 新パスワードはポリシー（最小長等・Zod）と確認用一致・同一PW不可を検証する。
+ * - 変更後は当該ユーザーの既存セッションを全て失効させ、操作中の本人には
+ *   新しいセッションを再発行して継続ログインさせる（他端末はログアウト）。
+ *
+ * `requireUser` で取得した本人の ID のみを対象にするため、他人のパスワードは
+ * 変更できない。
+ */
+export async function changePasswordAction(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  const current = await requireUser();
+  const parsed = changePasswordSchema.safeParse({
+    currentPassword: formString(formData, "currentPassword"),
+    newPassword: formString(formData, "newPassword"),
+    confirmPassword: formString(formData, "confirmPassword"),
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const db = getDb();
+  const user = (
+    await db.select().from(users).where(eq(users.id, current.id)).limit(1)
+  )[0];
+  if (!user) return { error: "ユーザーが見つかりません。" };
+
+  if (!(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+    return { error: "現在のパスワードが正しくありません。" };
+  }
+
+  await db
+    .update(users)
+    .set({ passwordHash: await hashPassword(parsed.data.newPassword) })
+    .where(eq(users.id, user.id));
+
+  // 既存セッションを失効 → 本人には新セッションを再発行（他端末は無効化）
+  await invalidateUserSessions(user.id);
+  await createSession(user.id);
+
+  return {
+    success: "パスワードを変更しました。他の端末のログインは無効になりました。",
+  };
 }
