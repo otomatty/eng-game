@@ -158,6 +158,37 @@ src/
   - `npm run test:coverage` で確認。
 - 外部 I/O（DB/Cookie/network）はモック、または `:memory:` の SQLite で統合テスト。
 
+### 6.1 サーバーアクションの統合テスト（コアループ / Issue #8）
+
+`src/app/actions/*.ts` のサーバーアクションは Cloudflare D1・Cookie・ヘッダ・
+リダイレクトに依存するため、純粋ロジックの単体テストとは別に **DB を伴う統合テスト**を
+`src/test/integration/` に置きます。コアループ（クエストクリア → ポイント付与 →
+スキル習得 → 単価再計算）や認証・承認フローの状態遷移を一気通貫で検証します。
+
+**仕組み（テスト用 DB セットアップ）**
+
+- 本番は Cloudflare D1（`drizzle-orm/d1`）ですが、D1 は SQLite 互換で Drizzle の
+  スキーマ・クエリビルダは共通です。テストでは `better-sqlite3` の `:memory:` DB へ
+  **同じ Drizzle マイグレーション**（`drizzle/migrations/`）を適用して代替します。
+- `src/db/index.ts` の `getDb()` は、`setTestDatabase(db)` で注入された DB があれば
+  それを優先して返します（本番経路では常に未設定）。
+- 各テストは `setupHarness()`（`src/test/integration/harness.ts`）を呼ぶだけで、
+  `beforeEach` で空の `:memory:` DB を生成・注入し、`afterEach` で解除・クローズします。
+  Cookie/ヘッダ/リダイレクト等の Next.js 依存は `src/test/integration/server-mocks.ts`
+  のインメモリ実装へ差し替えます（テストファイル冒頭の `vi.mock(...)` で参照）。
+- `server-only` は Next バンドラの仮想モジュールで Vite から解決できないため、
+  `vitest.config.ts` で空スタブ（`src/test/stubs/server-only.ts`）へエイリアスしています。
+
+**実行方法**
+
+```bash
+npm run test:ci                       # 統合テストを含む全テスト（CI と同一）
+npx vitest run src/test/integration   # 統合テストのみ
+```
+
+新しい DB 列・テーブルを追加したら `npm run db:generate` でマイグレーションを更新すれば、
+テスト DB にも自動で反映されます（マイグレーションをそのまま適用するため）。
+
 ---
 
 ## 7. CI（GitHub Actions）
