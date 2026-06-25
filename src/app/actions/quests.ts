@@ -129,6 +129,11 @@ export async function selfCompleteAction(
   const existing = await latestAttempt(user.id, questId);
   if (existing && ["completed", "approved"].includes(existing.status)) return {};
 
+  // 先に報酬を確定（ポイント付与・スキル習得・単価再計算）してから挑戦記録を
+  // 完了状態へ進める。`completeQuestForUser` は完了済みの挑戦が「既に」存在するかで
+  // 二重付与を防ぐため、状態を先に書き換えると初回でも報酬が付かない。
+  await completeQuestForUser(user.id, questId);
+
   if (existing?.status === "in_progress") {
     await db
       .update(questAttempts)
@@ -143,7 +148,6 @@ export async function selfCompleteAction(
     });
   }
 
-  await completeQuestForUser(user.id, questId);
   revalidatePath(`/quests/${questId}`);
   revalidatePath("/home");
   return {};
@@ -245,6 +249,10 @@ export async function takeTestAction(
     };
   }
 
+  // 合格が確定したら、状態を進める前に報酬を確定する（selfComplete と同様、
+  // `completeQuestForUser` の二重付与防止が初回付与を握り潰さないようにするため）。
+  await completeQuestForUser(user.id, questId);
+
   if (existing && ["in_progress", "rejected"].includes(existing.status)) {
     await db
       .update(questAttempts)
@@ -258,7 +266,6 @@ export async function takeTestAction(
       approvedAt: new Date(),
     });
   }
-  await completeQuestForUser(user.id, questId);
   revalidatePath(`/quests/${questId}`);
   revalidatePath("/home");
   return { ok: true };
