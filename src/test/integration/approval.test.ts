@@ -105,6 +105,29 @@ describe("承認: approveAttemptAction", () => {
     expect((await h.getUser(engineer.id))?.totalPoints).toBe(100);
   });
 
+  it("境界: 同じ提出を同時に承認してもポイントは1回だけ付与される（原子的 claim）", async () => {
+    const skill = await h.createSkill("Terraform");
+    const { engineer, attempt } = await submitApprovalQuest({
+      rewardPoints: 120,
+      skillIds: [skill.id],
+    });
+    const admin = await h.createUser({ role: "admin" });
+    await h.login(admin.id);
+
+    await Promise.all([
+      approveAttemptAction(attemptForm(attempt.id)),
+      approveAttemptAction(attemptForm(attempt.id)),
+      approveAttemptAction(attemptForm(attempt.id)),
+    ]);
+
+    expect((await h.getUser(engineer.id))?.totalPoints).toBe(120);
+    expect(await h.getAcquiredSkillIds(engineer.id)).toEqual([skill.id]);
+    const updated = (
+      await h.db().select().from(questAttempts).where(eq(questAttempts.id, attempt.id))
+    )[0];
+    expect(updated?.status).toBe("approved");
+  });
+
   it("異常系: submitted でない記録は承認しても状態が変わらない", async () => {
     const engineer = await h.createUser({ role: "engineer" });
     const quest = await h.createQuest({ verification: "approval", rewardPoints: 100 });

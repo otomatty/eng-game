@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `quest_attempts_unique_completion` ON `quest_attempts` (`user_id`,`quest_id`) WHERE status in ('completed', 'approved');

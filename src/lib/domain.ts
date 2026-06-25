@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   quests,
@@ -157,8 +157,17 @@ export async function getRecommendedQuests(userId: number, limit = 3) {
 }
 
 /**
- * クエストのクリアを確定する（ポイント付与＋スキル習得＋単価再計算）。
- * 自己申告型・承認確定時の共通処理。冪等性を考慮し、既に完了済みなら何もしない。
+ * クエスト報酬を確定する（ポイント付与＋スキル習得＋単価再計算）。
+ *
+ * **前提**: 呼び出し側が「完了の確定（claim）」を原子的に 1 回だけ行った直後にのみ呼ぶこと。
+ * 各サーバーアクションは挑戦記録の状態遷移（`in_progress`/`submitted`/`rejected` →
+ * `completed`/`approved`）を条件付き UPDATE / `onConflictDoNothing` INSERT で原子的に確定し、
+ * その確定に「勝った」呼び出しだけが本関数を呼ぶ。これにより二重付与防止はここでガードせず
+ * 呼び出し側の原子的 claim に一元化される（同時クリア／二重承認でも 1 回だけ付与）。
+ *
+ * - スキル習得・単価再計算は何度実行しても同じ状態に収束する（冪等）。
+ * - ポイントは `total_points + reward` の原子的インクリメントで加算し、別クエストの同時完了との
+ *   read-modify-write 競合（更新ロスト）を避ける。
  */
 export async function completeQuestForUser(
   userId: number,
@@ -181,7 +190,7 @@ export async function completeQuestForUser(
   const acquired = await getAcquiredSkillIds(userId);
   const newSkillIds = grantSkillIds.filter((sid) => !acquired.has(sid));
 
-  // スキル習得
+  // スキル習得（重複は onConflictDoNothing で無視）
   if (newSkillIds.length > 0) {
     await db
       .insert(userSkills)
@@ -189,30 +198,11 @@ export async function completeQuestForUser(
       .onConflictDoNothing();
   }
 
-  // ポイント付与（このクエストでの完了が初回の場合のみ）
-  const prior = await db
-    .select({ id: questAttempts.id })
-    .from(questAttempts)
-    .where(
-      and(
-        eq(questAttempts.userId, userId),
-        eq(questAttempts.questId, questId),
-        inArray(questAttempts.status, ["completed", "approved"]),
-      ),
-    );
-  const alreadyRewarded = prior.length > 0;
-
-  if (!alreadyRewarded) {
-    const current = (
-      await db
-        .select({ totalPoints: users.totalPoints })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1)
-    )[0];
+  // ポイント付与（原子的インクリメント。呼び出し側の claim により 1 回だけ実行される）
+  if (quest.rewardPoints !== 0) {
     await db
       .update(users)
-      .set({ totalPoints: (current?.totalPoints ?? 0) + quest.rewardPoints })
+      .set({ totalPoints: sql`${users.totalPoints} + ${quest.rewardPoints}` })
       .where(eq(users.id, userId));
   }
 

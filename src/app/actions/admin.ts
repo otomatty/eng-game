@@ -200,15 +200,22 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
   )[0];
   if (attempt?.status !== "submitted") return;
 
-  // 状態を「承認済み」へ進める前に報酬を確定する。`completeQuestForUser` は
-  // 完了/承認済みの挑戦が既存かで二重付与を防ぐため、先に状態を書き換えると
-  // 初回の承認でもポイント・スキルが付与されない（コアループのバグ）。
-  await completeQuestForUser(attempt.userId, attempt.questId);
-
-  await db
+  // 承認の確定（claim）を原子的に行う。`status = 'submitted'` を条件にした UPDATE で
+  // 先勝ちの 1 件だけが 1 行更新でき、同じ提出を同時に承認しても遅れた側は 0 行更新となる。
+  // この claim に「勝った」承認だけが報酬を付与するため、二重承認でも二重付与しない。
+  const claimed = await db
     .update(questAttempts)
     .set({ status: "approved", approverId: admin.id, approvedAt: new Date() })
-    .where(eq(questAttempts.id, attemptId));
+    .where(
+      and(
+        eq(questAttempts.id, attemptId),
+        eq(questAttempts.status, "submitted"),
+      ),
+    )
+    .returning({ id: questAttempts.id });
+  if (claimed.length === 0) return;
+
+  await completeQuestForUser(attempt.userId, attempt.questId);
 
   revalidatePath("/admin/approvals");
   revalidatePath("/admin");

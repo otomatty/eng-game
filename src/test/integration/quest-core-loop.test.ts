@@ -297,3 +297,75 @@ describe("コアループ: テスト型クエスト", () => {
     return single.id;
   }
 });
+
+describe("コアループ: 同時実行・原子性（claim）", () => {
+  it("DB制約: 同一 user×quest の completed 記録は2件目を弾く（部分ユニークインデックス）", async () => {
+    const user = await h.createUser();
+    const quest = await h.createQuest();
+    await h
+      .db()
+      .insert(questAttempts)
+      .values({ userId: user.id, questId: quest.id, status: "completed" });
+
+    await expect(
+      h
+        .db()
+        .insert(questAttempts)
+        .values({ userId: user.id, questId: quest.id, status: "completed" }),
+    ).rejects.toThrow();
+  });
+
+  it("DB制約: completed と approved も併存できない（同一 user×quest）", async () => {
+    const user = await h.createUser();
+    const quest = await h.createQuest();
+    await h
+      .db()
+      .insert(questAttempts)
+      .values({ userId: user.id, questId: quest.id, status: "approved" });
+
+    await expect(
+      h
+        .db()
+        .insert(questAttempts)
+        .values({ userId: user.id, questId: quest.id, status: "completed" }),
+    ).rejects.toThrow();
+  });
+
+  it("境界: 同一クエストへの同時セルフ完了でもポイントは1回だけ付与され、完了記録も1件", async () => {
+    const skill = await h.createSkill("Rust");
+    const user = await h.createUser();
+    await h.login(user.id);
+    const quest = await h.createQuest({
+      verification: "self",
+      rewardPoints: 100,
+      skillIds: [skill.id],
+    });
+
+    await Promise.all([
+      selfCompleteAction(questForm(quest.id)),
+      selfCompleteAction(questForm(quest.id)),
+      selfCompleteAction(questForm(quest.id)),
+    ]);
+
+    expect((await h.getUser(user.id))?.totalPoints).toBe(100);
+    expect(await h.getAcquiredSkillIds(user.id)).toEqual([skill.id]);
+    const completed = (await attemptsFor(user.id, quest.id)).filter(
+      (a) => a.status === "completed",
+    );
+    expect(completed).toHaveLength(1);
+  });
+
+  it("境界: 別クエストの同時完了でポイントが両方加算される（原子的インクリメントで更新ロストしない）", async () => {
+    const user = await h.createUser();
+    await h.login(user.id);
+    const q1 = await h.createQuest({ verification: "self", rewardPoints: 30 });
+    const q2 = await h.createQuest({ verification: "self", rewardPoints: 70 });
+
+    await Promise.all([
+      selfCompleteAction(questForm(q1.id)),
+      selfCompleteAction(questForm(q2.id)),
+    ]);
+
+    expect((await h.getUser(user.id))?.totalPoints).toBe(100);
+  });
+});
