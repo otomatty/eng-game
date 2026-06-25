@@ -1,12 +1,11 @@
 import "server-only";
 import { headers } from "next/headers";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { loginAttempts } from "@/db/schema";
 import {
   isLocked,
   rateLimitKey,
-  registerFailure,
   resolveRateLimitConfig,
   type AttemptState,
 } from "./rate-limit";
@@ -70,28 +69,43 @@ export async function checkLoginRateLimit(
 }
 
 /**
- * ログイン失敗を 1 件記録する（窓・しきい値・ロックは純粋ロジックが算出）。
- * 既存行があれば更新、なければ作成（upsert）。
+ * ログイン失敗を 1 件記録する。
+ *
+ * 並行する失敗を取りこぼさない（= バーストを 1 回として数えてロックを回避されない）ため、
+ * 読み取り→計算→書き込みではなく、単一の条件付き UPSERT で原子的に
+ * インクリメント／窓リセット／ロック判定を行う。SQL の遷移は純粋関数
+ * [`registerFailure`](./rate-limit.ts) と一致させており、その単体テストが仕様の参照となる。
+ * D1 の drizzle ドライバは対話的トランザクションを持たないため 1 文で完結させる。
+ *
+ * 列は drizzle の timestamp モード（= エポック秒）で保存されるため、ここでは秒で計算する。
  */
 export async function recordLoginFailure(key: string): Promise<void> {
   const config = resolveRateLimitConfig(process.env);
   const db = getDb();
-  const row = (
-    await db.select().from(loginAttempts).where(eq(loginAttempts.id, key)).limit(1)
-  )[0];
-  const now = Date.now();
-  const next = registerFailure(toState(row), now, config);
+  const now = Math.floor(Date.now() / 1000);
+  const windowSec = Math.floor(config.windowMs / 1000);
+  const lockUntil = now + Math.floor(config.lockMs / 1000);
+  const max = config.maxFailures;
 
-  const values = {
-    failureCount: next.failureCount,
-    firstFailureAt: new Date(next.firstFailureAt),
-    lockedUntil: next.lockedUntil === null ? null : new Date(next.lockedUntil),
-    updatedAt: new Date(now),
-  };
-  await db
-    .insert(loginAttempts)
-    .values({ id: key, ...values })
-    .onConflictDoUpdate({ target: loginAttempts.id, set: values });
+  // 既存行が「失効済み（窓を出た／ロック解除済み）」か。失効なら新しい窓で数え直す。
+  const expired = sql`(
+    (login_attempts.locked_until IS NOT NULL AND ${now} >= login_attempts.locked_until)
+    OR (login_attempts.locked_until IS NULL AND ${now} - login_attempts.first_failure_at >= ${windowSec})
+  )`;
+
+  await db.run(sql`
+    INSERT INTO login_attempts (id, failure_count, first_failure_at, locked_until, updated_at)
+    VALUES (${key}, 1, ${now}, CASE WHEN 1 >= ${max} THEN ${lockUntil} ELSE NULL END, ${now})
+    ON CONFLICT(id) DO UPDATE SET
+      failure_count = CASE WHEN ${expired} THEN 1 ELSE login_attempts.failure_count + 1 END,
+      first_failure_at = CASE WHEN ${expired} THEN ${now} ELSE login_attempts.first_failure_at END,
+      locked_until = CASE
+        WHEN ${expired} THEN (CASE WHEN 1 >= ${max} THEN ${lockUntil} ELSE NULL END)
+        WHEN login_attempts.failure_count + 1 >= ${max} THEN ${lockUntil}
+        ELSE login_attempts.locked_until
+      END,
+      updated_at = ${now}
+  `);
 }
 
 /** ログイン成功時にカウンタをリセットする（行を削除）。 */
