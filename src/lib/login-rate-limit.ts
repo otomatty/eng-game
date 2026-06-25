@@ -108,11 +108,18 @@ export async function recordLoginFailure(key: string): Promise<void> {
   `);
 
   // 後始末（opportunistic cleanup）: 失効済みの行を全件削除し、テーブルの無制限な増殖を防ぐ。
-  // 失敗（=書き込み）が起きたときだけ走るため自己抑制的で、専用のスケジューラを必要としない。
+  // 失効済み行のインデックスが無いため DELETE は全表走査になる。失敗のたびに走らせると、
+  // 多数の異なる IP+メールが失敗を撒くスプレー攻撃で D1 に負荷をかけ得る（本機能が吸収すべき
+  // 攻撃トラフィックを自らの負荷に変えてしまう）。そこで毎回ではなく低確率でのみ実行する。
+  // 失効行を「全件」削除するため、たまに走るだけでもテーブルは有界に保たれる。
   // 直前に upsert した本キーの行は新鮮（失効していない）ため削除対象にならない。
-  // （大規模化する場合は first_failure_at / locked_until にインデックスを検討する。）
-  await purgeExpiredLoginAttempts(now, windowSec);
+  if (Math.random() < CLEANUP_PROBABILITY) {
+    await purgeExpiredLoginAttempts(now, windowSec);
+  }
 }
+
+/** 後始末を実行する確率（失敗ごとに毎回ではなく、約 1/20 の頻度で全件パージする）。 */
+const CLEANUP_PROBABILITY = 0.05;
 
 /** 失効済み（窓を出た／ロック解除済み）のレート制限行を削除する。 */
 async function purgeExpiredLoginAttempts(
