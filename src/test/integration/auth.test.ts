@@ -130,7 +130,7 @@ describe("認証: セッションの発行と失効", () => {
     const current = await getCurrentUser();
     expect(current?.id).toBe(user.id);
     expect(current?.name).toBe("本人");
-    expect(current as Record<string, unknown>).not.toHaveProperty("passwordHash");
+    expect(current).not.toHaveProperty("passwordHash");
   });
 
   it("ログアウトするとセッション行と Cookie が削除され、getCurrentUser が null になる", async () => {

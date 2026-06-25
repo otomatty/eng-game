@@ -36,13 +36,15 @@ export function createTestDb(): TestDb {
   // 外部キー制約（ON DELETE CASCADE 等）を D1 と同様に有効化する。
   sqlite.pragma("foreign_keys = ON");
 
-  const db = drizzle(sqlite, { schema }) as unknown as Database;
-  migrate(db as unknown as Parameters<typeof migrate>[0], {
-    migrationsFolder: MIGRATIONS_FOLDER,
-  });
+  // ここでは better-sqlite3 ネイティブの Drizzle 型のまま扱い（migrate もそのまま通る）、
+  // 本番 D1 型（Database）との型合わせは setTestDatabase へ渡す境界だけに閉じる。
+  // D1 と better-sqlite3 は共に SQLite ダイアレクトでクエリ API は同一だが、公式に共通の
+  // Database 型は無いため、この 1 箇所だけ型を合わせる。
+  const db = drizzle(sqlite, { schema });
+  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
   return {
-    db,
+    db: db as unknown as Database,
     close: () => {
       sqlite.close();
     },

@@ -268,7 +268,8 @@ export function setupHarness(): Harness {
       .select({ skillId: userSkills.skillId })
       .from(userSkills)
       .where(eq(userSkills.userId, userId));
-    return rows.map((r) => r.skillId);
+    // アサート用ヘルパー: DB の返却順に依存せず決定的になるよう昇順で返す。
+    return rows.map((r) => r.skillId).sort((a, b) => a - b);
   }
 
   return {

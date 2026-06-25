@@ -113,16 +113,32 @@ describe("承認: approveAttemptAction", () => {
       .insert(questAttempts)
       .values({ userId: engineer.id, questId: quest.id, status: "in_progress" })
       .returning();
+    if (!attempt) throw new Error("attempt の作成に失敗");
     const admin = await h.createUser({ role: "admin" });
     await h.login(admin.id);
 
-    await approveAttemptAction(attemptForm(attempt!.id));
+    await approveAttemptAction(attemptForm(attempt.id));
 
     const updated = (
-      await h.db().select().from(questAttempts).where(eq(questAttempts.id, attempt!.id))
+      await h.db().select().from(questAttempts).where(eq(questAttempts.id, attempt.id))
     )[0];
     expect(updated?.status).toBe("in_progress");
     expect((await h.getUser(engineer.id))?.totalPoints).toBe(0);
+  });
+
+  it("異常系: 存在しない attemptId を承認しても何も起こらない（例外を投げない）", async () => {
+    const engineer = await h.createUser({ role: "engineer" });
+    const admin = await h.createUser({ role: "admin" });
+    await h.login(admin.id);
+
+    await expect(
+      approveAttemptAction(attemptForm(999999)),
+    ).resolves.toBeUndefined();
+
+    expect((await h.getUser(engineer.id))?.totalPoints).toBe(0);
+    expect(
+      await h.db().select().from(questAttempts),
+    ).toHaveLength(0);
   });
 
   it("異常系: engineer が承認アクションを呼ぶと /home へリダイレクトし、状態は変わらない", async () => {
@@ -161,6 +177,18 @@ describe("承認: rejectAttemptAction", () => {
     expect(updated?.reviewNote).toBe("要件未達");
     expect(updated?.approverId).toBe(admin.id);
     expect((await h.getUser(engineer.id))?.totalPoints).toBe(0);
+  });
+
+  it("異常系: 存在しない attemptId を差し戻しても何も起こらない", async () => {
+    const admin = await h.createUser({ role: "admin" });
+    await h.login(admin.id);
+
+    const res = await rejectAttemptAction(
+      {},
+      attemptForm(999999, { reviewNote: "x" }),
+    );
+    expect(res).toEqual({});
+    expect(await h.db().select().from(questAttempts)).toHaveLength(0);
   });
 
   it("異常系: engineer が差し戻しアクションを呼ぶと /home へリダイレクトする", async () => {
