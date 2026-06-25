@@ -106,6 +106,25 @@ export async function recordLoginFailure(key: string): Promise<void> {
       END,
       updated_at = ${now}
   `);
+
+  // 後始末（opportunistic cleanup）: 失効済みの行を全件削除し、テーブルの無制限な増殖を防ぐ。
+  // 失敗（=書き込み）が起きたときだけ走るため自己抑制的で、専用のスケジューラを必要としない。
+  // 直前に upsert した本キーの行は新鮮（失効していない）ため削除対象にならない。
+  // （大規模化する場合は first_failure_at / locked_until にインデックスを検討する。）
+  await purgeExpiredLoginAttempts(now, windowSec);
+}
+
+/** 失効済み（窓を出た／ロック解除済み）のレート制限行を削除する。 */
+async function purgeExpiredLoginAttempts(
+  now: number,
+  windowSec: number,
+): Promise<void> {
+  const db = getDb();
+  await db.run(sql`
+    DELETE FROM login_attempts
+    WHERE (locked_until IS NOT NULL AND ${now} >= locked_until)
+       OR (locked_until IS NULL AND ${now} >= first_failure_at + ${windowSec})
+  `);
 }
 
 /** ログイン成功時にカウンタをリセットする（行を削除）。 */
