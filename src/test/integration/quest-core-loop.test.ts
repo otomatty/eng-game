@@ -6,7 +6,10 @@ vi.mock("next/cache", async () => (await import("./server-mocks")).nextCacheMock
 vi.mock("next/headers", async () => (await import("./server-mocks")).nextHeadersMock);
 vi.mock("next/navigation", async () => (await import("./server-mocks")).nextNavigationMock);
 
-import { and, eq } from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { and, eq, sql } from "drizzle-orm";
 import { questAttempts, questQuestions } from "@/db/schema";
 import {
   selfCompleteAction,
@@ -367,5 +370,58 @@ describe("コアループ: 同時実行・原子性（claim）", () => {
     ]);
 
     expect((await h.getUser(user.id))?.totalPoints).toBe(100);
+  });
+
+  it("migration 0004: 既存の完了重複を解消してから部分ユニークインデックスを作成できる", async () => {
+    const db = h.db();
+    const user = await h.createUser();
+    const q1 = await h.createQuest();
+    const q2 = await h.createQuest();
+
+    // 索引を一旦外し、旧実装の競合で生じ得た「同一 user×quest の完了重複」を再現する。
+    await db.run(sql`DROP INDEX quest_attempts_unique_completion`);
+    await db.insert(questAttempts).values([
+      { userId: user.id, questId: q1.id, status: "completed" },
+      { userId: user.id, questId: q1.id, status: "approved" },
+      { userId: user.id, questId: q1.id, status: "completed" },
+      { userId: user.id, questId: q2.id, status: "completed" },
+    ]);
+
+    // コミット済みのマイグレーションファイル 0004 をそのまま適用（重複解消 → 索引作成）。
+    // 重複が残ったままだと CREATE UNIQUE INDEX が失敗するため、本テストが通ること自体が
+    // 「索引作成前に重複が解消される」ことの保証になる。
+    const file = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../drizzle/migrations/0004_free_falcon.sql",
+    );
+    const statements = readFileSync(file, "utf8")
+      .split("--> statement-breakpoint")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const stmt of statements) {
+      await db.run(sql.raw(stmt));
+    }
+
+    // 各 (user, quest) につき完了記録は最古の1件だけ残る。
+    const q1Rows = await db
+      .select()
+      .from(questAttempts)
+      .where(
+        and(
+          eq(questAttempts.userId, user.id),
+          eq(questAttempts.questId, q1.id),
+        ),
+      );
+    expect(q1Rows).toHaveLength(1);
+    const q2Rows = await db
+      .select()
+      .from(questAttempts)
+      .where(
+        and(
+          eq(questAttempts.userId, user.id),
+          eq(questAttempts.questId, q2.id),
+        ),
+      );
+    expect(q2Rows).toHaveLength(1);
   });
 });
