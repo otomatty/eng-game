@@ -38,6 +38,41 @@ export async function getAcquiredSkillIds(userId: number): Promise<Set<number>> 
   return new Set(rows.map((r) => r.skillId));
 }
 
+/**
+ * 累積ポイントを「完了/承認済みクエストの reward_points 合計」から再計算して
+ * users.total_points に書き戻す（導出値のキャッシュ）。
+ *
+ * 加算ではなく毎回集計し直すため、何度呼んでも同じ値に収束する（冪等・再実行可能）。
+ * これにより claim 後の報酬確定が途中で失敗しても、次回以降の確定で取りこぼしなく回復でき、
+ * 二重加算も起き得ない（同一クエストは reward_points を 1 回だけ計上）。
+ */
+export async function recomputeTotalPoints(userId: number): Promise<number> {
+  const db = getDb();
+  // 完了/承認済みの「クエスト」集合（重複挑戦は DISTINCT で 1 回に畳む）
+  const completed = await db
+    .selectDistinct({ questId: questAttempts.questId })
+    .from(questAttempts)
+    .where(
+      and(
+        eq(questAttempts.userId, userId),
+        inArray(questAttempts.status, ["completed", "approved"]),
+      ),
+    );
+  const questIds = completed.map((r) => r.questId);
+
+  let total = 0;
+  if (questIds.length > 0) {
+    const rows = await db
+      .select({ reward: quests.rewardPoints })
+      .from(quests)
+      .where(inArray(quests.id, questIds));
+    total = rows.reduce((sum, r) => sum + r.reward, 0);
+  }
+
+  await db.update(users).set({ totalPoints: total }).where(eq(users.id, userId));
+  return total;
+}
+
 /** 想定単価を再計算し、users.current_estimated_rate を更新して返す */
 export async function recomputeEstimatedRate(userId: number): Promise<number> {
   const db = getDb();
@@ -157,8 +192,12 @@ export async function getRecommendedQuests(userId: number, limit = 3) {
 }
 
 /**
- * クエストのクリアを確定する（ポイント付与＋スキル習得＋単価再計算）。
- * 自己申告型・承認確定時の共通処理。冪等性を考慮し、既に完了済みなら何もしない。
+ * クエスト報酬を確定する（スキル習得＋ポイント再計算＋単価再計算）。
+ *
+ * 完了の確定（claim）に成功した呼び出しから呼ぶことを想定するが、各ステップは
+ * **すべて冪等**（スキルは重複無視、ポイント・単価は集計し直し）なので、
+ * 同じ (userId, questId) に対して何度実行しても二重付与は起きない。これにより、
+ * claim 後の確定が途中で失敗しても、次回のアクションで再実行して取りこぼしを回復できる。
  */
 export async function completeQuestForUser(
   userId: number,
@@ -181,7 +220,7 @@ export async function completeQuestForUser(
   const acquired = await getAcquiredSkillIds(userId);
   const newSkillIds = grantSkillIds.filter((sid) => !acquired.has(sid));
 
-  // スキル習得
+  // スキル習得（重複は onConflictDoNothing で無視）
   if (newSkillIds.length > 0) {
     await db
       .insert(userSkills)
@@ -189,32 +228,8 @@ export async function completeQuestForUser(
       .onConflictDoNothing();
   }
 
-  // ポイント付与（このクエストでの完了が初回の場合のみ）
-  const prior = await db
-    .select({ id: questAttempts.id })
-    .from(questAttempts)
-    .where(
-      and(
-        eq(questAttempts.userId, userId),
-        eq(questAttempts.questId, questId),
-        inArray(questAttempts.status, ["completed", "approved"]),
-      ),
-    );
-  const alreadyRewarded = prior.length > 0;
-
-  if (!alreadyRewarded) {
-    const current = (
-      await db
-        .select({ totalPoints: users.totalPoints })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1)
-    )[0];
-    await db
-      .update(users)
-      .set({ totalPoints: (current?.totalPoints ?? 0) + quest.rewardPoints })
-      .where(eq(users.id, userId));
-  }
+  // ポイントを完了済みクエストから集計し直す（冪等・二重加算なし）
+  await recomputeTotalPoints(userId);
 
   // 単価を再計算
   await recomputeEstimatedRate(userId);

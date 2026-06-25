@@ -179,30 +179,41 @@ export const questSkills = sqliteTable(
 );
 
 // 挑戦・クリア記録（状態・提出物・承認情報）
-export const questAttempts = sqliteTable("quest_attempts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  questId: integer("quest_id")
-    .notNull()
-    .references(() => quests.id, { onDelete: "cascade" }),
-  // in_progress: 挑戦中 / submitted: 承認待ち / approved: 承認済(=完了)
-  // completed: 完了 / rejected: 差し戻し
-  status: text("status", {
-    enum: ["in_progress", "submitted", "approved", "completed", "rejected"],
-  })
-    .notNull()
-    .default("in_progress"),
-  submission: text("submission").notNull().default(""),
-  reviewNote: text("review_note").notNull().default(""),
-  approverId: integer("approver_id").references(() => users.id, {
-    onDelete: "set null",
-  }),
-  submittedAt: integer("submitted_at", { mode: "timestamp" }),
-  approvedAt: integer("approved_at", { mode: "timestamp" }),
-  createdAt,
-});
+export const questAttempts = sqliteTable(
+  "quest_attempts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    questId: integer("quest_id")
+      .notNull()
+      .references(() => quests.id, { onDelete: "cascade" }),
+    // in_progress: 挑戦中 / submitted: 承認待ち / approved: 承認済(=完了)
+    // completed: 完了 / rejected: 差し戻し
+    status: text("status", {
+      enum: ["in_progress", "submitted", "approved", "completed", "rejected"],
+    })
+      .notNull()
+      .default("in_progress"),
+    submission: text("submission").notNull().default(""),
+    reviewNote: text("review_note").notNull().default(""),
+    approverId: integer("approver_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    submittedAt: integer("submitted_at", { mode: "timestamp" }),
+    approvedAt: integer("approved_at", { mode: "timestamp" }),
+    createdAt,
+  },
+  (t) => [
+    // 1 ユーザー × 1 クエストにつき「完了済み（completed / approved）」の記録は高々 1 件。
+    // 報酬の二重付与を DB レベルで防ぐ部分ユニークインデックス。完了確定（claim）を
+    // 原子的に 1 回だけにするための土台（同時クリア／二重承認対策）。
+    uniqueIndex("quest_attempts_unique_completion")
+      .on(t.userId, t.questId)
+      .where(sql`status in ('completed', 'approved')`),
+  ],
+);
 
 // 単価帯（想定単価額）
 export const rateTiers = sqliteTable("rate_tiers", {

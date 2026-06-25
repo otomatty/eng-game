@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   questAttempts,
@@ -198,14 +198,67 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
   const attempt = (
     await db.select().from(questAttempts).where(eq(questAttempts.id, attemptId)).limit(1)
   )[0];
-  if (attempt?.status !== "submitted") return;
+  if (!attempt) return;
 
-  await db
+  // 同一 user×quest に既に完了/承認済みがあるか（二重提出 → 1件目承認済みの状況）。
+  const alreadyDone = (
+    await db
+      .select({ id: questAttempts.id })
+      .from(questAttempts)
+      .where(
+        and(
+          eq(questAttempts.userId, attempt.userId),
+          eq(questAttempts.questId, attempt.questId),
+          inArray(questAttempts.status, ["completed", "approved"]),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (alreadyDone) {
+    // この提出は二重提出の重複。既に完了済みで承認すると部分ユニークインデックスに違反する。
+    // rejected にして残すと、id が大きい重複が「最新の挑戦」となりユーザーには未完了（差し戻し）
+    // と見えて無限に再提出できてしまう（クエスト詳細は最新挑戦を id 降順で1件取得するため）。
+    // よって重複行は削除し、最新の挑戦を completed/approved 側に保つ。
+    if (attempt.status === "submitted") {
+      await db
+        .delete(questAttempts)
+        .where(
+          and(
+            eq(questAttempts.id, attemptId),
+            eq(questAttempts.status, "submitted"),
+          ),
+        );
+    }
+    // 既に完了済みなので、取りこぼし回復のため冪等に再確定しておく。
+    await completeQuestForUser(attempt.userId, attempt.questId);
+    revalidatePath("/admin/approvals");
+    revalidatePath("/admin");
+    return;
+  }
+
+  if (attempt.status !== "submitted") return;
+
+  // 承認の確定（claim）を原子的に行う。`status = 'submitted'` を条件にした UPDATE で
+  // 先勝ちの 1 件だけが 1 行更新でき、同じ提出を同時に承認しても遅れた側は 0 行更新となる。
+  // この claim に「勝った」承認だけが報酬を付与するため、二重承認でも二重付与しない。
+  //
+  // NOT EXISTS は上の alreadyDone チェックと検出〜承認の間に並行して完了が確定する競合
+  // （TOCTOU）への保険。索引違反の例外を投げず 0 行更新の no-op に倒す。
+  const claimed = await db
     .update(questAttempts)
     .set({ status: "approved", approverId: admin.id, approvedAt: new Date() })
-    .where(eq(questAttempts.id, attemptId));
+    .where(
+      and(
+        eq(questAttempts.id, attemptId),
+        eq(questAttempts.status, "submitted"),
+        sql`not exists (select 1 from ${questAttempts} qa2 where qa2.user_id = ${attempt.userId} and qa2.quest_id = ${attempt.questId} and qa2.status in ('completed', 'approved'))`,
+      ),
+    )
+    .returning({ id: questAttempts.id });
+  if (claimed.length === 0) return;
 
   await completeQuestForUser(attempt.userId, attempt.questId);
+
   revalidatePath("/admin/approvals");
   revalidatePath("/admin");
 }

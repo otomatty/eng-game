@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   questAttempts,
@@ -78,6 +78,57 @@ async function latestAttempt(userId: number, questId: number) {
   )[0];
 }
 
+/** claim 可能（completed へ遷移できる）な挑戦状態。 */
+type ClaimableStatus = "in_progress" | "rejected";
+
+/**
+ * クエスト完了を原子的に確定する（claim）。報酬を付与すべき場合のみ true を返す。
+ *
+ * - 既存の挑戦記録が claim 可能な状態なら、`id` と `status` を条件にした UPDATE で
+ *   `completed` へ遷移させる。同時実行では先勝ちの 1 件だけが 1 行更新でき、遅れた側は
+ *   `status` 条件に外れて 0 行更新となり false を返す。
+ * - 既存記録が無い（または claim 不可）なら `completed` 行を INSERT する。部分ユニーク
+ *   インデックス `quest_attempts_unique_completion` により、同時 INSERT は 1 件だけ成功し、
+ *   競合した側は `onConflictDoNothing` で 0 行となり false を返す。
+ */
+async function claimCompletion(
+  userId: number,
+  questId: number,
+  existing: Awaited<ReturnType<typeof latestAttempt>>,
+  claimableStatuses: readonly ClaimableStatus[],
+): Promise<boolean> {
+  const db = getDb();
+  if (existing) {
+    // 既存記録が claim 可能（completed へ遷移できる）状態でなければ、新規 completed 行は
+    // 作らない（claim 不可の状態から並行して完了行を作り報酬対象にするのを防ぐ）。
+    if (!claimableStatuses.some((s) => s === existing.status)) return false;
+    const updated = await db
+      .update(questAttempts)
+      .set({ status: "completed", approvedAt: new Date() })
+      .where(
+        and(
+          eq(questAttempts.id, existing.id),
+          inArray(questAttempts.status, [...claimableStatuses]),
+        ),
+      )
+      .returning({ id: questAttempts.id });
+    return updated.length > 0;
+  }
+
+  // 既存の claim 対象が無い場合は completed 行を新規 INSERT する。部分ユニークインデックスへの
+  // `on conflict ... where ... do nothing` で、同時 INSERT は 1 件だけ成功し競合した側は 0 行になる。
+  // drizzle の `onConflictDoNothing({ where })` は述語を `do nothing` の後ろに置き SQLite 構文として
+  // 不正になるため、ここは生 SQL で正しい位置（conflict ターゲットの述語）に置く。
+  const inserted = await db.all<{ id: number }>(sql`
+    insert into quest_attempts (user_id, quest_id, status, approved_at)
+    values (${userId}, ${questId}, 'completed', unixepoch())
+    on conflict (user_id, quest_id) where status in ('completed', 'approved')
+    do nothing
+    returning id
+  `);
+  return inserted.length > 0;
+}
+
 /** クエストに挑戦開始（in_progress の記録を作成） */
 export async function startQuestAction(
   formData: FormData,
@@ -116,7 +167,6 @@ export async function selfCompleteAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const user = await requireUser();
-  const db = getDb();
   const parsed = questIdSchema.safeParse({
     questId: formString(formData, "questId"),
   });
@@ -127,23 +177,21 @@ export async function selfCompleteAction(
     return { error: "自己申告型ではありません" };
 
   const existing = await latestAttempt(user.id, questId);
-  if (existing && ["completed", "approved"].includes(existing.status)) return {};
-
-  if (existing?.status === "in_progress") {
-    await db
-      .update(questAttempts)
-      .set({ status: "completed", approvedAt: new Date() })
-      .where(eq(questAttempts.id, existing.id));
-  } else {
-    await db.insert(questAttempts).values({
-      userId: user.id,
-      questId,
-      status: "completed",
-      approvedAt: new Date(),
-    });
+  if (existing && ["completed", "approved"].includes(existing.status)) {
+    // 既に完了済み。報酬確定は冪等なので、過去の部分失敗の取りこぼしを念のため回復する。
+    await completeQuestForUser(user.id, questId);
+    return {};
   }
 
-  await completeQuestForUser(user.id, questId);
+  // 完了の確定（claim）を原子的に行い、確定に「勝った」場合のみ報酬を付与する。
+  // 同時クリア（ダブルクリック等）でも DB レベルで 1 回だけ確定されるため二重付与しない。
+  const won = await claimCompletion(user.id, questId, existing, [
+    "in_progress",
+  ]);
+  if (won) {
+    await completeQuestForUser(user.id, questId);
+  }
+
   revalidatePath(`/quests/${questId}`);
   revalidatePath("/home");
   return {};
@@ -204,7 +252,6 @@ export async function takeTestAction(
   formData: FormData,
 ): Promise<{ ok?: boolean; error?: string }> {
   const user = await requireUser();
-  const db = getDb();
   const parsed = takeTestSchema.safeParse({
     questId: formString(formData, "questId"),
   });
@@ -214,9 +261,10 @@ export async function takeTestAction(
   if (quest.verification !== "test")
     return { error: "テスト型ではありません" };
 
-  // 重複提出の冪等性: 既にクリア済みなら再採点しない
+  // 重複提出の冪等性: 既にクリア済みなら再採点しない（冪等な再確定で取りこぼしは回復）
   const existing = await latestAttempt(user.id, questId);
   if (existing && ["completed", "approved"].includes(existing.status)) {
+    await completeQuestForUser(user.id, questId);
     return { ok: true };
   }
 
@@ -245,20 +293,15 @@ export async function takeTestAction(
     };
   }
 
-  if (existing && ["in_progress", "rejected"].includes(existing.status)) {
-    await db
-      .update(questAttempts)
-      .set({ status: "completed", approvedAt: new Date() })
-      .where(eq(questAttempts.id, existing.id));
-  } else {
-    await db.insert(questAttempts).values({
-      userId: user.id,
-      questId,
-      status: "completed",
-      approvedAt: new Date(),
-    });
+  // 合格が確定したら完了を原子的に claim し、勝った場合のみ報酬を付与する
+  // （同時に複数回合格を送っても二重付与しない）。
+  const won = await claimCompletion(user.id, questId, existing, [
+    "in_progress",
+    "rejected",
+  ]);
+  if (won) {
+    await completeQuestForUser(user.id, questId);
   }
-  await completeQuestForUser(user.id, questId);
   revalidatePath(`/quests/${questId}`);
   revalidatePath("/home");
   return { ok: true };
