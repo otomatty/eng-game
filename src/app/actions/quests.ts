@@ -177,7 +177,11 @@ export async function selfCompleteAction(
     return { error: "自己申告型ではありません" };
 
   const existing = await latestAttempt(user.id, questId);
-  if (existing && ["completed", "approved"].includes(existing.status)) return {};
+  if (existing && ["completed", "approved"].includes(existing.status)) {
+    // 既に完了済み。報酬確定は冪等なので、過去の部分失敗の取りこぼしを念のため回復する。
+    await completeQuestForUser(user.id, questId);
+    return {};
+  }
 
   // 完了の確定（claim）を原子的に行い、確定に「勝った」場合のみ報酬を付与する。
   // 同時クリア（ダブルクリック等）でも DB レベルで 1 回だけ確定されるため二重付与しない。
@@ -257,9 +261,10 @@ export async function takeTestAction(
   if (quest.verification !== "test")
     return { error: "テスト型ではありません" };
 
-  // 重複提出の冪等性: 既にクリア済みなら再採点しない
+  // 重複提出の冪等性: 既にクリア済みなら再採点しない（冪等な再確定で取りこぼしは回復）
   const existing = await latestAttempt(user.id, questId);
   if (existing && ["completed", "approved"].includes(existing.status)) {
+    await completeQuestForUser(user.id, questId);
     return { ok: true };
   }
 

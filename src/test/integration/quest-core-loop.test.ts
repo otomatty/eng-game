@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
-import { questAttempts, questQuestions } from "@/db/schema";
+import { questAttempts, questQuestions, userSkills, users } from "@/db/schema";
 import {
   selfCompleteAction,
   submitForApprovalAction,
@@ -370,6 +370,74 @@ describe("コアループ: 同時実行・原子性（claim）", () => {
     ]);
 
     expect((await h.getUser(user.id))?.totalPoints).toBe(100);
+  });
+
+  it("回復: 報酬が取りこぼされた完了済みクエストは、再度クリア操作すると冪等に再確定される", async () => {
+    const skill = await h.createSkill("Recovery");
+    const user = await h.createUser();
+    await h.login(user.id);
+    const quest = await h.createQuest({
+      verification: "self",
+      rewardPoints: 100,
+      skillIds: [skill.id],
+    });
+
+    await selfCompleteAction(questForm(quest.id));
+    expect((await h.getUser(user.id))?.totalPoints).toBe(100);
+
+    // claim 後の報酬確定が部分失敗した状況を模擬: ポイントとスキルを巻き戻す
+    await h
+      .db()
+      .update(users)
+      .set({ totalPoints: 0, currentEstimatedRate: 0 })
+      .where(eq(users.id, user.id));
+    await h.db().delete(userSkills).where(eq(userSkills.userId, user.id));
+    expect(await h.getAcquiredSkillIds(user.id)).toEqual([]);
+
+    // 既に完了済みのクエストへ再度クリア操作 → 冪等に再確定され取りこぼしが回復する
+    await selfCompleteAction(questForm(quest.id));
+
+    expect((await h.getUser(user.id))?.totalPoints).toBe(100);
+    expect(await h.getAcquiredSkillIds(user.id)).toEqual([skill.id]);
+    // 完了記録は増えない
+    expect(await attemptsFor(user.id, quest.id)).toHaveLength(1);
+  });
+
+  it("回復: migration 0004 のバックフィルが既存の完了記録へ報酬を一括反映する", async () => {
+    const db = h.db();
+    const skill = await h.createSkill("Backfill");
+    const user = await h.createUser();
+    const quest = await h.createQuest({
+      verification: "self",
+      rewardPoints: 80,
+      skillIds: [skill.id],
+    });
+    const tierId = await h.createRateTier({ estimatedRate: 50, skillIds: [skill.id] });
+    void tierId;
+
+    // 旧バグの状態を再現: 完了記録はあるが報酬が未反映（ポイント0・スキル無し・単価0）
+    await db.run(sql`DROP INDEX quest_attempts_unique_completion`);
+    await db
+      .insert(questAttempts)
+      .values({ userId: user.id, questId: quest.id, status: "completed" });
+
+    // 0004 マイグレーションをそのまま適用（重複解消 → 索引作成 → 報酬バックフィル）
+    const file = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../drizzle/migrations/0004_free_falcon.sql",
+    );
+    const statements = readFileSync(file, "utf8")
+      .split("--> statement-breakpoint")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const stmt of statements) {
+      await db.run(sql.raw(stmt));
+    }
+
+    const after = await h.getUser(user.id);
+    expect(after?.totalPoints).toBe(80); // ポイント
+    expect(after?.currentEstimatedRate).toBe(50); // 単価
+    expect(await h.getAcquiredSkillIds(user.id)).toEqual([skill.id]); // スキル
   });
 
   it("境界: claim 不可な既存記録（submitted）があるときは新規 completed 行を作らず報酬も付かない", async () => {

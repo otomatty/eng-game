@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   questAttempts,
@@ -198,15 +198,55 @@ export async function approveAttemptAction(fd: FormData): Promise<void> {
   const attempt = (
     await db.select().from(questAttempts).where(eq(questAttempts.id, attemptId)).limit(1)
   )[0];
-  if (attempt?.status !== "submitted") return;
+  if (!attempt) return;
+
+  // 同一 user×quest に既に完了/承認済みがあるか（二重提出 → 1件目承認済みの状況）。
+  const alreadyDone = (
+    await db
+      .select({ id: questAttempts.id })
+      .from(questAttempts)
+      .where(
+        and(
+          eq(questAttempts.userId, attempt.userId),
+          eq(questAttempts.questId, attempt.questId),
+          inArray(questAttempts.status, ["completed", "approved"]),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (alreadyDone) {
+    // この提出は二重提出の重複。承認すると部分ユニークインデックスに違反するため、
+    // submitted のままなら rejected（重複により無効）にして承認待ちキューから除く。
+    if (attempt.status === "submitted") {
+      await db
+        .update(questAttempts)
+        .set({
+          status: "rejected",
+          approverId: admin.id,
+          reviewNote: "重複提出のため無効化されました（既に完了済み）",
+        })
+        .where(
+          and(
+            eq(questAttempts.id, attemptId),
+            eq(questAttempts.status, "submitted"),
+          ),
+        );
+    }
+    // 既に完了済みなので、取りこぼし回復のため冪等に再確定しておく。
+    await completeQuestForUser(attempt.userId, attempt.questId);
+    revalidatePath("/admin/approvals");
+    revalidatePath("/admin");
+    return;
+  }
+
+  if (attempt.status !== "submitted") return;
 
   // 承認の確定（claim）を原子的に行う。`status = 'submitted'` を条件にした UPDATE で
   // 先勝ちの 1 件だけが 1 行更新でき、同じ提出を同時に承認しても遅れた側は 0 行更新となる。
   // この claim に「勝った」承認だけが報酬を付与するため、二重承認でも二重付与しない。
   //
-  // さらに「同一 user×quest に既に completed/approved が存在しない」ことを NOT EXISTS で条件化する。
-  // 二重提出で submitted が複数生じた場合（submitted は部分ユニークインデックスの対象外）、
-  // 1 件目の承認後に 2 件目を承認しようとすると索引違反で例外になるのを防ぎ、0 行更新の no-op にする。
+  // NOT EXISTS は上の alreadyDone チェックと検出〜承認の間に並行して完了が確定する競合
+  // （TOCTOU）への保険。索引違反の例外を投げず 0 行更新の no-op に倒す。
   const claimed = await db
     .update(questAttempts)
     .set({ status: "approved", approverId: admin.id, approvedAt: new Date() })

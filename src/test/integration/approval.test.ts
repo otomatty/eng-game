@@ -146,24 +146,25 @@ describe("承認: approveAttemptAction", () => {
     await h.login(admin.id);
 
     await approveAttemptAction(attemptForm(a1.id));
-    // 2件目の承認は例外を投げず no-op になる
+    // 2件目の承認は例外を投げず、重複として無効化される
     await expect(approveAttemptAction(attemptForm(a2.id))).resolves.toBeUndefined();
 
     expect((await h.getUser(engineer.id))?.totalPoints).toBe(100);
+    const rows = await h
+      .db()
+      .select()
+      .from(questAttempts)
+      .where(
+        and(
+          eq(questAttempts.userId, engineer.id),
+          eq(questAttempts.questId, quest.id),
+        ),
+      );
     // 完了/承認済みは1件だけ
-    const done = (
-      await h
-        .db()
-        .select()
-        .from(questAttempts)
-        .where(
-          and(
-            eq(questAttempts.userId, engineer.id),
-            eq(questAttempts.questId, quest.id),
-          ),
-        )
-    ).filter((a) => a.status === "approved" || a.status === "completed");
-    expect(done).toHaveLength(1);
+    expect(rows.filter((a) => a.status === "approved" || a.status === "completed")).toHaveLength(1);
+    // 重複した2件目は rejected になり、承認待ちキューに残らない
+    const second = rows.find((a) => a.id === a2.id);
+    expect(second?.status).toBe("rejected");
   });
 
   it("異常系: submitted でない記録は承認しても状態が変わらない", async () => {
