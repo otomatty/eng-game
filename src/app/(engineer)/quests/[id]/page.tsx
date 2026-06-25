@@ -1,12 +1,57 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { questAttempts, questSkills, quests, skills } from "@/db/schema";
+import {
+  questAttempts,
+  questQuestionChoices,
+  questQuestions,
+  questSkills,
+  quests,
+  skills,
+} from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { getAcquiredSkillIds } from "@/lib/domain";
 import { VerificationBadge } from "@/components/ui";
-import { QuestActions } from "./quest-actions";
+import { QuestActions, type DisplayQuestion } from "./quest-actions";
+
+/**
+ * テスト型クエストの設問を「表示用」に取得する。
+ * 正解情報（correct_text / is_correct）は一切含めない（UI へ正解を露出させない / Issue #7）。
+ */
+async function loadDisplayQuestions(
+  questId: number,
+): Promise<DisplayQuestion[]> {
+  const db = getDb();
+  const questionRows = await db
+    .select({
+      id: questQuestions.id,
+      prompt: questQuestions.prompt,
+      kind: questQuestions.kind,
+    })
+    .from(questQuestions)
+    .where(eq(questQuestions.questId, questId))
+    .orderBy(asc(questQuestions.sortOrder), asc(questQuestions.id));
+  if (questionRows.length === 0) return [];
+
+  const choiceRows = await db
+    .select({
+      id: questQuestionChoices.id,
+      questionId: questQuestionChoices.questionId,
+      label: questQuestionChoices.label,
+    })
+    .from(questQuestionChoices)
+    .orderBy(asc(questQuestionChoices.sortOrder), asc(questQuestionChoices.id));
+
+  return questionRows.map((q) => ({
+    id: q.id,
+    prompt: q.prompt,
+    kind: q.kind,
+    choices: choiceRows
+      .filter((c) => c.questionId === q.id)
+      .map((c) => ({ id: c.id, label: c.label })),
+  }));
+}
 
 const VERIFICATION_HELP: Record<string, string> = {
   self: "自己申告型: ボタンを押すと即時にクリアが確定します。",
@@ -37,6 +82,11 @@ export default async function QuestDetailPage({
     .where(eq(questSkills.questId, questId));
 
   const acquired = await getAcquiredSkillIds(user.id);
+
+  const testQuestions =
+    quest.verification === "test"
+      ? await loadDisplayQuestions(quest.id)
+      : [];
 
   const attempt = (
     await db
@@ -112,6 +162,7 @@ export default async function QuestDetailPage({
           status={attempt?.status}
           reviewNote={attempt?.reviewNote}
           submission={attempt?.submission}
+          questions={testQuestions}
         />
       </div>
     </div>

@@ -1,18 +1,55 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { questAttempts, quests } from "@/db/schema";
+import {
+  questAttempts,
+  questQuestionChoices,
+  questQuestions,
+  quests,
+} from "@/db/schema";
 import { requireUser } from "@/lib/guards";
 import { completeQuestForUser } from "@/lib/domain";
+import { gradeTest, type GradableQuestion } from "@/lib/domain-logic";
 import { formString, type ActionResult } from "@/lib/form";
 import {
   firstError,
   questIdSchema,
   submitForApprovalSchema,
   takeTestSchema,
+  testAnswerValueSchema,
 } from "@/lib/schemas";
+
+/**
+ * テスト型クエストの設問（＋選択肢）を採点用の純粋データへ整形して取得する。
+ * 正解情報（correctText / isCorrect）はサーバー内部でのみ使用し、UI へは渡さない。
+ */
+async function loadGradableQuestions(
+  questId: number,
+): Promise<GradableQuestion[]> {
+  const db = getDb();
+  const questionRows = await db
+    .select()
+    .from(questQuestions)
+    .where(eq(questQuestions.questId, questId))
+    .orderBy(asc(questQuestions.sortOrder), asc(questQuestions.id));
+  if (questionRows.length === 0) return [];
+
+  const choiceRows = await db
+    .select()
+    .from(questQuestionChoices)
+    .orderBy(asc(questQuestionChoices.sortOrder), asc(questQuestionChoices.id));
+
+  return questionRows.map((q) => ({
+    id: q.id,
+    kind: q.kind,
+    correctText: q.correctText,
+    choices: choiceRows
+      .filter((c) => c.questionId === q.id)
+      .map((c) => ({ id: c.id, isCorrect: c.isCorrect })),
+  }));
+}
 
 async function loadQuest(questId: number) {
   const db = getDb();
@@ -156,8 +193,12 @@ export async function submitForApprovalAction(
 }
 
 /**
- * テスト型: 合否判定でクリア確定。
- * MVPでは簡易テスト（正解キーワードの一致）で合否判定する。
+ * テスト型: 管理画面で設定された設問・正解に対して採点し、合否でクリアを確定する。
+ *
+ * - 採点は副作用のない純粋関数 `gradeTest`（[`domain-logic.ts`](../../lib/domain-logic.ts)）に委譲。
+ * - 設問が未設定のテストは合格にしない（素通り防止）。
+ * - 不合格時は正解を一切返さない（ヒント露出の排除 / Issue #7）。
+ * - 既にクリア済みなら再採点せず冪等に成功を返す。
  */
 export async function takeTestAction(
   formData: FormData,
@@ -166,24 +207,44 @@ export async function takeTestAction(
   const db = getDb();
   const parsed = takeTestSchema.safeParse({
     questId: formString(formData, "questId"),
-    answer: formString(formData, "answer"),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
-  const { questId, answer } = parsed.data;
+  const { questId } = parsed.data;
   const quest = await loadQuest(questId);
   if (quest.verification !== "test")
     return { error: "テスト型ではありません" };
 
-  // MVP簡易判定: "pass" と入力すると合格（運用では設問・採点ロジックに置換）
-  const passed = answer === "pass" || answer === "合格";
-  if (!passed) {
-    return { error: "不合格です。もう一度挑戦してください（ヒント: pass）。" };
-  }
-
+  // 重複提出の冪等性: 既にクリア済みなら再採点しない
   const existing = await latestAttempt(user.id, questId);
   if (existing && ["completed", "approved"].includes(existing.status)) {
     return { ok: true };
   }
+
+  const questions = await loadGradableQuestions(questId);
+  if (questions.length === 0) {
+    return { error: "このテストにはまだ設問が設定されていません。" };
+  }
+
+  // 設問ごとの提出値（`q_<questionId>`）を読み取り、長さを検証する。
+  const submission: Record<number, string> = {};
+  for (const q of questions) {
+    const valueParsed = testAnswerValueSchema.safeParse(
+      formString(formData, `q_${q.id}`),
+    );
+    if (!valueParsed.success) return { error: firstError(valueParsed.error) };
+    submission[q.id] = valueParsed.data;
+  }
+
+  const grading = gradeTest(questions, submission, quest.passThreshold);
+  if (!grading.passed) {
+    // 不合格時に「今回の正答数」を返すと、選択肢を1つずつ変えてスコア差分から
+    // 正解を逆算できる（オラクル攻撃）。再挑戦可能なテストでは合否のみを返し、
+    // 設問数・合格基準（毎回不変で逆算に使えない静的情報）だけを案内する。
+    return {
+      error: `不合格です。全${grading.total}問中 ${grading.requiredCorrect} 問以上の正解で合格です。もう一度挑戦してください。`,
+    };
+  }
+
   if (existing && ["in_progress", "rejected"].includes(existing.status)) {
     await db
       .update(questAttempts)

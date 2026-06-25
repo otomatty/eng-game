@@ -12,10 +12,12 @@ import {
   rejectAttemptSchema,
   roleEnum,
   saveQuestSchema,
+  saveQuestionSchema,
   saveRateTierSchema,
   saveSkillSchema,
   submitForApprovalSchema,
   takeTestSchema,
+  testAnswerValueSchema,
   toggleQuestPublishSchema,
   updateUserSchema,
   verificationEnum,
@@ -336,14 +338,117 @@ describe("submitForApprovalSchema（成果物提出）", () => {
   });
 });
 
-describe("takeTestSchema（テスト解答）", () => {
-  it("正常系: 解答を小文字化・トリムする", () => {
-    expect(
-      takeTestSchema.parse({ questId: "1", answer: "  PASS  " }).answer,
-    ).toBe("pass");
+describe("takeTestSchema（テスト解答提出）", () => {
+  it("正常系: クエスト ID を数値化する", () => {
+    expect(takeTestSchema.parse({ questId: "3" }).questId).toBe(3);
   });
-  it("境界値: 解答未指定は空文字になる", () => {
-    expect(takeTestSchema.parse({ questId: "1" }).answer).toBe("");
+  it("異常系: クエスト ID が不正なら失敗する", () => {
+    expect(takeTestSchema.safeParse({ questId: "0" }).success).toBe(false);
+  });
+});
+
+describe("testAnswerValueSchema（設問ごとの提出値）", () => {
+  it("正常系: 前後空白をトリムする", () => {
+    expect(testAnswerValueSchema.parse("  10 ")).toBe("10");
+  });
+  it("境界値: 未指定は空文字になる", () => {
+    expect(testAnswerValueSchema.parse(undefined)).toBe("");
+  });
+  it("異常系: 上限超過は失敗する", () => {
+    expect(testAnswerValueSchema.safeParse("a".repeat(201)).success).toBe(false);
+  });
+});
+
+describe("saveQuestionSchema（設問の保存）", () => {
+  describe("single（選択式）", () => {
+    it("正常系: 選択肢2つ以上＋正解1つで成功する", () => {
+      const r = saveQuestionSchema.safeParse({
+        questId: "1",
+        prompt: "正しいものは？",
+        kind: "single",
+        choicesRaw: "*正解\n不正解",
+      });
+      expect(r.success).toBe(true);
+    });
+    it("異常系: 選択肢が1つだけだと失敗する", () => {
+      const r = saveQuestionSchema.safeParse({
+        questId: "1",
+        prompt: "Q",
+        kind: "single",
+        choicesRaw: "*正解のみ",
+      });
+      expect(r.success).toBe(false);
+    });
+    it("異常系: 正解マーク（*）が無いと失敗する", () => {
+      const r = saveQuestionSchema.safeParse({
+        questId: "1",
+        prompt: "Q",
+        kind: "single",
+        choicesRaw: "選択肢A\n選択肢B",
+      });
+      expect(r.success).toBe(false);
+    });
+    it("境界値: 選択肢が上限を超えると失敗する", () => {
+      const lines = ["*正解", ...Array.from({ length: 10 }, (_, i) => `x${i}`)];
+      const r = saveQuestionSchema.safeParse({
+        questId: "1",
+        prompt: "Q",
+        kind: "single",
+        choicesRaw: lines.join("\n"),
+      });
+      expect(r.success).toBe(false);
+    });
+  });
+
+  describe("text（完全一致）", () => {
+    it("正常系: 正解文字列があれば成功する", () => {
+      const r = saveQuestionSchema.safeParse({
+        questId: "1",
+        prompt: "SQL のキーワードは？",
+        kind: "text",
+        correctText: "SELECT",
+      });
+      expect(r.success).toBe(true);
+    });
+    it("異常系: 正解文字列が空だと失敗する", () => {
+      const r = saveQuestionSchema.safeParse({
+        questId: "1",
+        prompt: "Q",
+        kind: "text",
+        correctText: "   ",
+      });
+      expect(r.success).toBe(false);
+    });
+  });
+
+  it("異常系: 設問文が空だと失敗する", () => {
+    const r = saveQuestionSchema.safeParse({
+      questId: "1",
+      prompt: "",
+      kind: "text",
+      correctText: "x",
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("saveQuestSchema の passThreshold（合格基準）", () => {
+  const base = {
+    title: "T",
+    rewardPoints: "100",
+    verification: "test",
+    isPublished: "on",
+  };
+  it("正常系: 数値文字列を 1..100 の整数として受け取る", () => {
+    expect(saveQuestSchema.parse({ ...base, passThreshold: "60" }).passThreshold).toBe(60);
+  });
+  it("境界値: 空・未指定は 100（全問正解）に既定化する", () => {
+    expect(saveQuestSchema.parse({ ...base, passThreshold: "" }).passThreshold).toBe(100);
+    expect(saveQuestSchema.parse(base).passThreshold).toBe(100);
+  });
+  it("異常系: 0 や 101 は範囲外で失敗する", () => {
+    expect(saveQuestSchema.safeParse({ ...base, passThreshold: "0" }).success).toBe(false);
+    expect(saveQuestSchema.safeParse({ ...base, passThreshold: "101" }).success).toBe(false);
   });
 });
 

@@ -99,6 +99,8 @@ export interface QuestDef {
   verification: "self" | "approval" | "test";
   published: boolean;
   skills: string[];
+  /** テスト型の合格基準（正答率 %）。未指定は 100（全問正解）。 */
+  passThreshold?: number;
 }
 
 export const QUEST_DEFS: QuestDef[] = [
@@ -117,6 +119,85 @@ export const QUEST_DEFS: QuestDef[] = [
   { title: "テストを書こう", desc: "ユニットテストを実装し、カバレッジを提出する。", category: "共通", points: 200, verification: "approval", published: true, skills: ["テスト設計"] },
   { title: "アーキテクチャ設計演習", desc: "スケーラブルなシステム設計を提案する。", category: "バックエンド", points: 350, verification: "approval", published: true, skills: ["アーキテクチャ設計"] },
   { title: "【下書き】GraphQL入門", desc: "公開前のクエスト。", category: "バックエンド", points: 200, verification: "approval", published: false, skills: [] },
+];
+
+export interface ChoiceDef {
+  label: string;
+  correct: boolean;
+}
+
+export interface QuestionDef {
+  /** 紐づくクエストのタイトル（QUEST_DEFS の title と一致させる） */
+  questTitle: string;
+  prompt: string;
+  kind: "single" | "text";
+  /** kind=text の正解文字列 */
+  correctText?: string;
+  /** kind=single の選択肢 */
+  choices?: ChoiceDef[];
+}
+
+/**
+ * テスト型クエストの設問・正解（Issue #7）。
+ * 採点はサーバー側の純粋関数で行い、正解は UI に露出させない。
+ */
+export const QUESTION_DEFS: QuestionDef[] = [
+  {
+    questTitle: "TypeScript 型クイズ",
+    prompt: "「文字列 または 数値」を表す TypeScript の型はどれ？",
+    kind: "single",
+    choices: [
+      { label: "string | number", correct: true },
+      { label: "string & number", correct: false },
+      { label: "string, number", correct: false },
+      { label: "Array<string>", correct: false },
+    ],
+  },
+  {
+    questTitle: "TypeScript 型クイズ",
+    prompt: "プロパティを再代入不可（読み取り専用）にするキーワードは？（英単語で入力）",
+    kind: "text",
+    correctText: "readonly",
+  },
+  {
+    questTitle: "SQL で集計クエリ",
+    prompt: "集計のために行をグループ化する SQL 句はどれ？",
+    kind: "single",
+    choices: [
+      { label: "GROUP BY", correct: true },
+      { label: "ORDER BY", correct: false },
+      { label: "WHERE", correct: false },
+      { label: "LIMIT", correct: false },
+    ],
+  },
+  {
+    questTitle: "SQL で集計クエリ",
+    prompt: "行数を数える集計関数は？（関数名のみ・英大文字小文字は不問）",
+    kind: "text",
+    correctText: "COUNT",
+  },
+  {
+    questTitle: "クラウド基礎を学ぶ",
+    prompt: "需要に応じて計算資源を増減できる、クラウドの特性はどれ？",
+    kind: "single",
+    choices: [
+      { label: "スケーラビリティ", correct: true },
+      { label: "オンプレミス", correct: false },
+      { label: "モノリス", correct: false },
+      { label: "レガシー", correct: false },
+    ],
+  },
+  {
+    questTitle: "クラウド基礎を学ぶ",
+    prompt: "使った分だけ料金が発生する課金モデルはどれ？",
+    kind: "single",
+    choices: [
+      { label: "従量課金", correct: true },
+      { label: "定額買い切り", correct: false },
+      { label: "リース契約", correct: false },
+      { label: "無償提供", correct: false },
+    ],
+  },
 ];
 
 export interface EngineerDef {
@@ -184,6 +265,8 @@ export function buildSeedSql(passwordHash: string): string {
   for (const table of [
     "rate_tier_skills",
     "rate_tiers",
+    "quest_question_choices",
+    "quest_questions",
     "quest_attempts",
     "quest_skills",
     "quests",
@@ -253,8 +336,8 @@ export function buildSeedSql(passwordHash: string): string {
     lines.push(
       insertRow(
         "quests",
-        ["id", "title", "description", "category", "reward_points", "verification", "is_published"],
-        [questId, q.title, q.desc, q.category, q.points, q.verification, q.published],
+        ["id", "title", "description", "category", "reward_points", "verification", "pass_threshold", "is_published"],
+        [questId, q.title, q.desc, q.category, q.points, q.verification, q.passThreshold ?? 100, q.published],
       ),
     );
     for (const s of q.skills) {
@@ -265,6 +348,41 @@ export function buildSeedSql(passwordHash: string): string {
           [questId, skillId(skillIds, s)],
         ),
       );
+    }
+  });
+
+  // テスト型クエストの設問・選択肢（正解はDBのみに保持）
+  let choiceId = 1;
+  QUESTION_DEFS.forEach((question, i) => {
+    const questionId = i + 1;
+    const questId = questIdByTitle.get(question.questTitle);
+    if (questId === undefined) {
+      throw new Error(`seed: 未知のクエスト "${question.questTitle}"`);
+    }
+    lines.push(
+      insertRow(
+        "quest_questions",
+        ["id", "quest_id", "prompt", "kind", "correct_text", "sort_order"],
+        [
+          questionId,
+          questId,
+          question.prompt,
+          question.kind,
+          question.kind === "text" ? question.correctText ?? "" : "",
+          i + 1,
+        ],
+      ),
+    );
+    if (question.kind === "single") {
+      (question.choices ?? []).forEach((c, ci) => {
+        lines.push(
+          insertRow(
+            "quest_question_choices",
+            ["id", "question_id", "label", "is_correct", "sort_order"],
+            [choiceId++, questionId, c.label, c.correct, ci + 1],
+          ),
+        );
+      });
     }
   });
 
