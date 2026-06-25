@@ -37,6 +37,17 @@ export async function createSession(userId: number): Promise<void> {
   });
 }
 
+/**
+ * 指定ユーザーの全セッションを失効させる（パスワード変更・リセット時）。
+ * これにより、変更前に発行された Cookie トークンは即座に無効になる。
+ * Cookie 自体は操作していないため、操作中の本人を継続ログインさせたい場合は
+ * 呼び出し後に `createSession` で新しいセッションを発行する。
+ */
+export async function invalidateUserSessions(userId: number): Promise<void> {
+  const db = getDb();
+  await db.delete(sessions).where(eq(sessions.userId, userId));
+}
+
 export async function destroySession(): Promise<void> {
   const db = getDb();
   const store = await cookies();

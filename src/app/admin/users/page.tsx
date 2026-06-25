@@ -2,6 +2,7 @@ import { getDb } from "@/db";
 import { teams, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/guards";
 import {
+  adminResetPasswordAction,
   createTeamAction,
   createUserAction,
   deleteTeamAction,
@@ -89,7 +90,18 @@ export default async function AdminUsersPage() {
               </div>
               <div>
                 <label className="label" htmlFor="user-password">初期パスワード</label>
-                <input id="user-password" name="password" type="text" className="input" required />
+                <input
+                  id="user-password"
+                  name="password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  className="input"
+                  required
+                />
+                <p className="mt-1 text-xs text-zen-sub">
+                  8文字以上。本人がログイン後に変更できます。
+                </p>
               </div>
               <div>
                 <label className="label" htmlFor="user-role">ロール</label>
@@ -164,6 +176,37 @@ export default async function AdminUsersPage() {
                   <button className="btn-ghost text-xs">保存</button>
                 </form>
               </div>
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs font-medium text-zen-accent">
+                  🔒 パスワードをリセット
+                </summary>
+                <ActionForm
+                  action={adminResetPasswordAction}
+                  className="mt-2 flex flex-wrap items-end gap-2"
+                >
+                  <input type="hidden" name="id" value={u.id} />
+                  <div className="flex-1">
+                    <label className="label" htmlFor={`reset-pw-${u.id}`}>
+                      新しいパスワード
+                    </label>
+                    <input
+                      id={`reset-pw-${u.id}`}
+                      name="newPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={8}
+                      className="input"
+                      placeholder="8文字以上"
+                      required
+                    />
+                  </div>
+                  <button className="btn-ghost text-xs">リセットする</button>
+                </ActionForm>
+                <p className="mt-1 text-xs text-zen-sub">
+                  リセットすると当該ユーザーの既存ログインは無効になります。
+                </p>
+              </details>
+
               {u.id !== admin.id && (
                 <form action={deleteUserAction} className="mt-2">
                   <input type="hidden" name="id" value={u.id} />

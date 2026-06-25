@@ -25,4 +25,6 @@ export function formStrings(formData: FormData, key: string): string[] {
  */
 export interface ActionResult {
   error?: string;
+  /** 処理成功時にユーザーへ表示する完了メッセージ（任意）。 */
+  success?: string;
 }
